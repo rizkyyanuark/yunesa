@@ -40,11 +40,11 @@ Secret CI memakai variable individual protected, dengan raw value dan environmen
 
 Shell runner ID 2 menjalankan wrapper deployment lokal. Pipeline awal tidak memakai variable private key SSH atau aggregate `.env`. Wrapper harus memilih project/volume baru secara eksplisit, membatasi job pada project Yunesa, dan menjaga file environment berizin terbatas. Domain target adalah konfigurasi nonsecret; nama variable nonsecret lain mengikuti implementasi pipeline yang diperiksa, bukan daftar dugaan.
 
-Helper memerlukan PowerShell 7 dan `glab` yang sudah terautentikasi ke GitLab self-hosted. Dari root repository:
+Helper mendukung Windows PowerShell 5.1 dan PowerShell 7, dengan `glab` yang sudah terautentikasi ke GitLab self-hosted. Dari root repository:
 
 ```powershell
-pwsh -File scripts/set-production-variables.ps1 -ValidateOnly
-pwsh -File scripts/set-production-variables.ps1
+powershell.exe -NoProfile -File scripts/set-production-variables.ps1 -ValidateOnly
+powershell.exe -NoProfile -File scripts/set-production-variables.ps1
 ```
 
 Perintah pertama membaca metadata tanpa mengambil nilai variable. Perintah kedua menerima input lokal, mempertahankan password yang sudah ada, lalu membuat atau memperbarui provider key. Variable baru dibuat hidden; GitLab tidak mengizinkan perubahan hidden pada variable visible yang sudah ada. Keberadaan script dan pemeriksaan sintaks tidak membuktikan credentials sudah tersimpan atau provider berhasil dipanggil.

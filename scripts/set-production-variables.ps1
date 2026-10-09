@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 <#
 .SYNOPSIS
 Collect production credentials locally and save them as GitLab CI/CD variables.
@@ -8,11 +8,11 @@ is sent to glab through stdin. Existing production passwords are preserved.
 New variables are protected, masked, hidden, and raw, with scope production.
 GitLab cannot change an existing variable from visible to hidden.
 .EXAMPLE
-pwsh -File .\scripts\set-production-variables.ps1 -ValidateOnly
+powershell.exe -NoProfile -File .\scripts\set-production-variables.ps1 -ValidateOnly
 .EXAMPLE
-pwsh -File .\scripts\set-production-variables.ps1
+powershell.exe -NoProfile -File .\scripts\set-production-variables.ps1
 .EXAMPLE
-pwsh -File .\scripts\set-production-variables.ps1 -GlabPath C:\path\glab.exe
+powershell.exe -NoProfile -File .\scripts\set-production-variables.ps1 -GlabPath C:\path\glab.exe
 #>
 [CmdletBinding()]
 param(
@@ -26,6 +26,25 @@ $ErrorActionPreference = 'Stop'
 $scope = 'production'
 $planned = [System.Collections.Generic.List[object]]::new()
 $savedKeys = [System.Collections.Generic.List[string]]::new()
+
+function ConvertTo-WindowsArgument {
+    param([AllowEmptyString()] [string] $Argument)
+    $quoted = [System.Text.StringBuilder]::new()
+    [void] $quoted.Append('"')
+    $backslashes = 0
+    foreach ($character in $Argument.ToCharArray()) {
+        if ($character -eq '\') { $backslashes++; continue }
+        if ($character -eq '"') {
+            [void] $quoted.Append([char] '\', $backslashes * 2 + 1)
+        }
+        else { [void] $quoted.Append([char] '\', $backslashes) }
+        [void] $quoted.Append($character)
+        $backslashes = 0
+    }
+    [void] $quoted.Append([char] '\', $backslashes * 2)
+    [void] $quoted.Append('"')
+    return $quoted.ToString()
+}
 
 function Invoke-Glab {
     param(
@@ -41,32 +60,35 @@ function Invoke-Glab {
     $startInfo.RedirectStandardInput = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    $startInfo.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
-    $startInfo.Environment['GITLAB_HOST'] = $Repository.Host
-    $startInfo.Environment['GLAB_CHECK_UPDATE'] = 'false'
-    $startInfo.Environment['NO_COLOR'] = '1'
-    [void] $startInfo.Environment.Remove('DEBUG')
-    [void] $startInfo.Environment.Remove('GLAB_DEBUG_HTTP')
-    foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add($argument) }
+    $startInfo.EnvironmentVariables['GITLAB_HOST'] = $Repository.Host
+    $startInfo.EnvironmentVariables['GLAB_CHECK_UPDATE'] = 'false'
+    $startInfo.EnvironmentVariables['NO_COLOR'] = '1'
+    [void] $startInfo.EnvironmentVariables.Remove('DEBUG')
+    [void] $startInfo.EnvironmentVariables.Remove('GLAB_DEBUG_HTTP')
+    $startInfo.Arguments = ($Arguments | ForEach-Object { ConvertTo-WindowsArgument $_ }) -join ' '
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     $buffer = [IntPtr]::Zero
     $started = $false
+    $inputWriter = $null
     try {
         [void] $process.Start()
         $started = $true
         $outputTask = $process.StandardOutput.ReadToEndAsync()
         $errorTask = $process.StandardError.ReadToEndAsync()
+        $inputWriter = [System.IO.StreamWriter]::new($process.StandardInput.BaseStream, [System.Text.UTF8Encoding]::new($false), 1024, $true)
         if ($null -ne $InputSecret) {
             $buffer = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($InputSecret)
             for ($index = 0; $index -lt $InputSecret.Length; $index++) {
-                $process.StandardInput.Write([char] [System.Runtime.InteropServices.Marshal]::ReadInt16($buffer, $index * 2))
+                $inputWriter.Write([char] [System.Runtime.InteropServices.Marshal]::ReadInt16($buffer, $index * 2))
             }
         }
+        $inputWriter.Dispose()
+        $inputWriter = $null
         $process.StandardInput.Close()
         if (-not $process.WaitForExit(60000)) {
-            $process.Kill($true)
+            $process.Kill()
             throw [System.TimeoutException]::new("$Operation timed out. Raw CLI output was suppressed.")
         }
         $output = $outputTask.GetAwaiter().GetResult()
@@ -84,7 +106,8 @@ function Invoke-Glab {
     }
     finally {
         if ($buffer -ne [IntPtr]::Zero) { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($buffer) }
-        if ($started -and -not $process.HasExited) { $process.Kill($true) }
+        if ($started -and -not $process.HasExited) { $process.Kill() }
+        if ($null -ne $inputWriter) { $inputWriter.Dispose() }
         $process.Dispose()
     }
 }
@@ -94,7 +117,11 @@ function Get-VariableMetadata {
     $filter = 'map({key,variable_type,environment_scope,protected,masked,hidden,raw})'
     for ($page = 1; $page -le 81; $page++) {
         $json = Invoke-Glab -Arguments @('variable', 'list', '--repo', $Repository.AbsoluteUri.TrimEnd('/'), '--output', 'json', '--jq', $filter, '--per-page', '100', '--page', "$page") -Operation 'Variable metadata check' -CaptureOutput
-        try { $items = @($json | ConvertFrom-Json -ErrorAction Stop) }
+        try {
+            $decoded = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+            $items = @()
+            if ($null -ne $decoded) { $items = @($decoded) }
+        }
         catch [System.ArgumentException] { throw 'glab returned invalid variable metadata JSON.' }
         foreach ($item in $items) { $records.Add($item) }
         if ($items.Count -lt 100) { return $records.ToArray() }
@@ -150,14 +177,16 @@ function Read-MaskedValue {
 function New-GeneratedSecret {
     $bytes = [byte[]]::new(48)
     $secret = [System.Security.SecureString]::new()
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try {
-        [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+        $generator.GetBytes($bytes)
         $encoded = [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_')
         foreach ($character in $encoded.ToCharArray()) { $secret.AppendChar($character) }
         $secret.MakeReadOnly()
         return $secret
     }
     finally {
+        $generator.Dispose()
         [Array]::Clear($bytes, 0, $bytes.Length)
         $encoded = $null
     }
