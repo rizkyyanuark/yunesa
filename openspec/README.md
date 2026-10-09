@@ -17,8 +17,11 @@ Paket v0.1, 9 Oktober 2026. Struktur ini menggunakan Markdown; toolkit OpenSpec 
 | [ING-001](changes/ing-001-academic-data/proposal.md) | Identitas, publikasi, kepenulisan, sumber, dan kontrak data | Scope accepted; desain/tugas disiapkan; belum diimplementasikan |
 | [KG-001](changes/kg-001-knowledge-graph/proposal.md) | Ringkasan Inggris, ekstraksi, KG, indeks, dan pipeline | Scope accepted; proposal awal; bergantung pada ING-001 |
 | [ANS-001](changes/ans-001-evidence-answers/proposal.md) | Jawaban, sitasi, graph bukti, dan akses | Scope accepted; proposal awal; bergantung pada KG-001 |
+| [DEP-001](changes/dep-001-initial-deployment/proposal.md) | Deployment baseline server 2 GB, Memgraph/Qdrant, domain, dan GitLab CI/CD | Scope accepted; implementasi/acceptance planned; secrets dan aktivasi pending |
 
 ING-001: [desain](changes/ing-001-academic-data/design.md), [tugas](changes/ing-001-academic-data/tasks.md), [delta spec](changes/ing-001-academic-data/specs/academic-data/spec.md), [verifikasi](changes/ing-001-academic-data/verification.md).
+
+DEP-001: [desain](changes/dep-001-initial-deployment/design.md), [tugas](changes/dep-001-initial-deployment/tasks.md), [panduan deployment](../docs/deployment.md). Tidak menandai ING/KG/ANS selesai atau mengotorisasi migrasi volume lama.
 
 ## Capability specs
 
