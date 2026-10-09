@@ -1,0 +1,50 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+!.env.test.example
+*.env
+!*.env.example
+*.pem
+*.key
+credentials*.json
+cloudflared/
+AWS/
+
+# Python dependencies and generated files
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.uv-cache*/
+.hf_cache/
+.cache/
+
+# Frontend dependencies and builds
+node_modules/
+dist/
+build/
+web/package-lock.json
+
+# Application state and downloaded models
+/data/
+/saves/
+/models/
+/backend/saves/
+/docker/volumes/
+*.db
+*.sqlite*
+*.log
+logs/
+*.bak
+*.tmp
+
+# Local tools and OS files
+.agents/
+.codex/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

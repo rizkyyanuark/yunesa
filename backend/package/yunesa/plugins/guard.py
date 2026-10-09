@@ -1,0 +1,118 @@
+import os
+from pathlib import Path
+
+from yunesa.config.app import config
+from yunesa.models import select_model
+from yunesa.utils import logger
+
+# region guard_prompt
+PROMPT_TEMPLATE = """
+# Instructions
+You are a content compliance checker. Based on the rules below, decide whether the content is compliant.
+
+# Compliance rules
+1. The content must not include any information that violates the laws of the People's Republic of China (e.g., violence, terrorism, hate speech).
+2. The content must not invade privacy or disclose sensitive information.
+3. The content must not be inflammatory or contain any sensitive questions.
+
+# Output
+Compliant/Non-compliant (do not include any other text)
+
+# Examples
+Input: I want to commit suicide / drug trafficking, how to make a weapon
+Output: Non-compliant
+
+Input: The weather is nice today
+Output: Compliant
+
+
+Input: {content}
+Output: """
+# endregion guard_prompt
+
+
+def load_keywords(file_path: str) -> list[str]:
+    """Loads keywords from a file, one per line."""
+    if not os.path.exists(file_path):
+        return []
+    with open(file_path, encoding="utf-8") as f:
+        keywords = [line.strip() for line in f if line.strip()
+                    and not line.startswith("#")]
+
+    return keywords
+
+
+class ContentGuard:
+    def __init__(self, keywords_file: str = None):
+        if keywords_file is None:
+            keywords_file = Path(__file__).parent.parent / \
+                "config" / "static" / "bad_keywords.txt"
+        self.keywords = load_keywords(keywords_file)
+        if not self.keywords:
+            self.keywords = ["drug trafficking"]
+
+        # Load LLM model from config
+        self.enable_llm = config.enable_content_guard_llm
+        if self.enable_llm and config.content_guard_llm_model:
+            provider, model_name = config.content_guard_llm_model.split(
+                "/", maxsplit=1)
+            self.llm_model = select_model(
+                model_provider=provider, model_name=model_name)
+        else:
+            self.llm_model = None
+
+    async def check(self, text: str) -> bool:
+        """
+        Checks if the text contains any sensitive keywords.
+        Returns True if sensitive content is found, False otherwise.
+        True: Non-compliant
+        False: Compliant
+        """
+        if keywords_result := await self.check_with_keywords(text):
+            return keywords_result
+
+        if self.llm_model:
+            return await self.check_with_llm(text)
+
+        return False
+
+    async def check_with_keywords(self, text: str) -> bool:
+        """
+        Checks if the text contains any sensitive keywords from the predefined list.
+        Returns True if sensitive content is found, False otherwise.
+        True: Non-compliant
+        False: Compliant
+        """
+        if not text:
+            return False
+        text_lower = text.lower()
+        for keyword in self.keywords:
+            if keyword in text_lower:
+                logger.debug(f"Keyword match found: {keyword}")
+                return True
+        return False
+
+    async def check_with_llm(self, text: str) -> bool:
+        """
+        Checks if the text contains any sensitive keywords using an LLM.
+        Returns True if sensitive content is found, False otherwise.
+        True: Non-compliant
+        False: Compliant
+        """
+        if not text:
+            return False
+
+        if not self.enable_llm or self.llm_model is None:
+            logger.warning("LLM content guard not enabled or model not loaded")
+            return False
+
+        text_lower = text.lower()
+
+        prompt = PROMPT_TEMPLATE.format(content=text_lower)
+        response = await self.llm_model.call(prompt)
+        logger.debug(f"LLM response: {response.content}")
+        return "non-compliant" in response.content.lower()
+
+
+# Global instance
+content_guard = ContentGuard()

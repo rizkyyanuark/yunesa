@@ -1,0 +1,46 @@
+# Organization information configuration file
+# Used to configure basic website information and branding
+
+# Organization information
+organization:
+  name: "Yunesa" # Full organization name
+  logo: "/favicon.svg" # Logo file path (in web/public)
+  avatar: "/avatar.jpg" # Avatar file path (in web/public)
+  login_bg: "/login-bg.jpg" # Login background image path (in web/public)
+
+# Project information
+branding:
+  name: "Yunesa"
+  title: "Yunesa Knowledge Engine" # System title
+  subtitle: "Text-first academic knowledge assistant powered by Neo4j graph context and Milvus vector search" # Used when subtitles is empty
+  subtitles:
+    - "Ask text questions over connected academic knowledge"
+    - "Ground answers with Neo4j graph context and Milvus vector retrieval"
+    - "Explore lecturer, publication, and institutional relationships"
+    - "Query, retrieve, reason, and answer with academic knowledge"
+
+features:
+  - label: "GitHub Stars"
+    value: "0+"
+    description: "Academic knowledge graph application"
+    icon: "stars"
+  - label: "Active Project"
+    value: "V0.6.0"
+    description: "Dockerized API, web, ETL, Airflow, Neo4j, and Milvus stack"
+    icon: "issues"
+  - label: "Total Commits"
+    value: "100+"
+    description: "Focused iterations toward graph and vector knowledge retrieval"
+    icon: "commits"
+  - label: "Open-Source License"
+    value: "MIT License"
+    description: "Readable foundation for academic review and demonstration"
+    icon: "license"
+
+actions: []
+
+# Footer information
+footer:
+  copyright: "(C) Yunesa Knowledge Engine 2026 v0.6.0"
+  user_agreement_url: "/protocols/user-agreement.template.html"
+  privacy_policy_url: "/protocols/privacy-policy.template.html"

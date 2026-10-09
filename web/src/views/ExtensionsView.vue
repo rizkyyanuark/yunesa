@@ -1,0 +1,108 @@
+<template>
+  <div class="extensions-view extension-page-root">
+    <ViewSwitchHeader
+      v-model:active-key="activeTab"
+      title="Extension Management"
+      :items="extensionTabs"
+      aria-label="Extension management tabs"
+    >
+      <template #actions>
+        <!-- Manual ingestion features (Add, Upload, Remote Install) are disabled as per engineering directive -->
+      </template>
+    </ViewSwitchHeader>
+
+    <div class="extensions-content">
+      <div v-show="activeTab === 'tools'" class="tab-panel">
+        <ToolsManagerComponent />
+      </div>
+      <div v-show="activeTab === 'skills'" class="tab-panel">
+        <SkillsManagerComponent ref="skillsRef" @import="handleSkillsImport" />
+      </div>
+      <div v-show="activeTab === 'mcp'" class="tab-panel">
+        <McpServersComponent ref="mcpRef" @add="handleMcpAdd" />
+      </div>
+      <div v-show="activeTab === 'subagents'" class="tab-panel">
+        <SubAgentsComponent ref="subagentsRef" @add="handleSubagentAdd" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import SkillsManagerComponent from '@/components/SkillsManagerComponent.vue'
+import ToolsManagerComponent from '@/components/ToolsManagerComponent.vue'
+import McpServersComponent from '@/components/McpServersComponent.vue'
+import SubAgentsComponent from '@/components/SubAgentsComponent.vue'
+import ViewSwitchHeader from '@/components/ViewSwitchHeader.vue'
+
+const route = useRoute()
+const activeTab = ref('tools')
+const skillsRef = ref(null)
+const mcpRef = ref(null)
+const subagentsRef = ref(null)
+
+const extensionTabs = [
+  { key: 'tools', label: 'Tools' },
+  { key: 'mcp', label: 'MCP' },
+  { key: 'subagents', label: 'Subagents' },
+  { key: 'skills', label: 'Skills' }
+]
+
+watch(
+  () => route.query,
+  (query) => {
+    if (query.tab && ['tools', 'skills', 'mcp', 'subagents'].includes(query.tab)) {
+      activeTab.value = query.tab
+    }
+  },
+  { immediate: true }
+)
+
+const handleSkillsImport = () => {
+  handleSkillsRefresh()
+}
+
+const handleSkillsRefresh = () => {
+  if (skillsRef.value?.fetchSkills) {
+    skillsRef.value.fetchSkills()
+  }
+}
+
+const handleMcpAdd = () => {
+  if (mcpRef.value?.showAddModal) {
+    mcpRef.value.showAddModal()
+  }
+}
+
+const handleSubagentAdd = () => {
+  if (subagentsRef.value?.showAddModal) {
+    subagentsRef.value.showAddModal()
+  }
+}
+
+</script>
+
+<style scoped lang="less">
+@import '@/assets/css/extensions.less';
+
+.extensions-view {
+  .extension-header-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .extensions-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+
+    .tab-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+}
+</style>

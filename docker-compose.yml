@@ -1,0 +1,432 @@
+name: yunesa
+
+x-api-worker-env: &api-worker-env
+  HOST_IP: ${HOST_IP:-}
+  LITE_MODE: ${LITE_MODE:-false}
+  RUNNING_IN_DOCKER: "true"
+  YUNESA_ENV: development
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+  MODEL_DIR_IN_DOCKER: /models
+  # DBs and other services
+  POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}@postgres:5432/${POSTGRES_DB:-postgres}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  MILVUS_URI: ${MILVUS_URI:-http://milvus:19530}
+  MILVUS_TOKEN: ${MILVUS_TOKEN:-}
+  MILVUS_DB_NAME: ${MILVUS_DB_NAME:-default}
+  NEO4J_URI: ${NEO4J_URI:-bolt://graph:7687}
+  NEO4J_USERNAME: ${NEO4J_USERNAME:-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}}
+  NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
+  # --- Core Credentials (Shared by ETL & Server) ---
+  SUPABASE_URL: ${SUPABASE_URL}
+  SUPABASE_KEY: ${SUPABASE_KEY}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+  AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+  GROQ_API_KEY: ${GROQ_API_KEY}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  # Entity Resolution
+  YUNESA_ALIAS_SUGGESTIONS_PATH: ${YUNESA_ALIAS_SUGGESTIONS_PATH:-/app/data/kg/entity_resolution/concept_alias_suggestions.json}
+  YUNESA_ALIAS_CURATION_STORE: ${YUNESA_ALIAS_CURATION_STORE:-/app/data/kg/entity_resolution/alias_curation_store.json}
+  YUNESA_APPROVED_CONCEPT_ALIASES_PATH: ${YUNESA_APPROVED_CONCEPT_ALIASES_PATH:-/app/data/kg/entity_resolution/concept_aliases.approved.yml}
+  YUNESA_ENFORCE_QUALITY_GATES: ${YUNESA_ENFORCE_QUALITY_GATES:-true}
+  OPIK_ENABLED: ${OPIK_ENABLED:-true}
+  OPIK_API_KEY: ${OPIK_API_KEY:-}
+  OPIK_WORKSPACE: ${OPIK_WORKSPACE:-}
+  OPIK_PROJECT_NAME: ${OPIK_PROJECT_NAME:-yunesa-academic-graphrag}
+  OPIK_ENVIRONMENT: ${OPIK_ENVIRONMENT:-development}
+  MINIO_URI: ${MINIO_URI:-http://minio:9000}
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-yunesa}
+  MINIO_ROOT_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+  MINIO_PUBLIC_BASE_URL: ${MINIO_PUBLIC_BASE_URL:-http://localhost:9000}
+  SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
+  # LightRAG
+  EMBEDDING_TIMEOUT: ${EMBEDDING_TIMEOUT:-600}
+  LLM_TIMEOUT: ${LLM_TIMEOUT:-600}
+  # Agent run
+  RUN_CANCEL_KEY_TTL_SECONDS: ${RUN_CANCEL_KEY_TTL_SECONDS:-1800}
+  RUN_EVENTS_STREAM_TTL_SECONDS: ${RUN_EVENTS_STREAM_TTL_SECONDS:-7200}
+  # Other environment variables
+  NO_PROXY: localhost,127.0.0.1,milvus,graph,minio,milvus-etcd-dev,etcd,api.siliconflow.cn
+  no_proxy: localhost,127.0.0.1,milvus,graph,minio,milvus-etcd-dev,etcd,api.siliconflow.cn
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow.Dockerfile
+  image: yunesa-airflow:3.1.7
+  profiles: ["etl"]
+  networks:
+    - app-network
+  env_file:
+    - .env
+  environment:
+    AIRFLOW_ENV: dev
+    ENVIRONMENT: dev
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}@postgres:5432/${POSTGRES_DB:-postgres}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    AIRFLOW__WEBSERVER__RBAC: "true"
+    DOCKER_NETWORK: ${DOCKER_NETWORK:-yunesa-network}
+    HOST_DATA_DIR: ${HOST_DATA_DIR:-${PWD}/data}
+    HOST_PACKAGE_DIR: ${HOST_PACKAGE_DIR:-${PWD}/backend/package}
+    ETL_WORKER_IMAGE: ${ETL_WORKER_IMAGE:-yunesa-etl-worker:latest}
+    ETL_WORKER_MOUNT_CODE: ${ETL_WORKER_MOUNT_CODE:-true}
+    ETL_RUN_MODE: ${ETL_RUN_MODE:-sample}
+    ETL_SAMPLE_SIZE: ${ETL_SAMPLE_SIZE:-5}
+    ETL_ENRICH_MAX_PAPERS_PER_RUN: ${ETL_ENRICH_MAX_PAPERS_PER_RUN:-5}
+    ETL_STORAGE_TYPE: ${ETL_STORAGE_TYPE:-local}
+    ETL_FORCE_EXTRACT: ${ETL_FORCE_EXTRACT:-false}
+    ETL_FRESHNESS_HOURS: ${ETL_FRESHNESS_HOURS:-72}
+    # --- Variabel Baru untuk Airflow 3 Task Execution API ---
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?AIRFLOW_JWT_SECRET required}
+    AIRFLOW__API__AUTH_BACKENDS: airflow.providers.fab.auth_manager.api.auth.backend.session,airflow.sdk.api.auth.backend.token
+    # --------------------------------------------------------
+
+x-python-base: &python-base
+  build:
+    context: .
+    dockerfile: docker/api.Dockerfile
+  image: yunesa-api:latest
+  working_dir: /app
+  volumes:
+    - ./backend/server:/app/server
+    - ./backend/package:/app/package
+    - ./saves:/app/saves
+    - ./data:/app/data
+    - ./backend/test:/app/test
+    - ./backend/scripts:/app/scripts
+    - ./.env:/app/.env
+    - ${MODEL_DIR:-./models}:/models
+    - ./.hf_cache:/app/.cache/huggingface
+  networks:
+    - app-network
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  env_file:
+    - .env
+  environment:
+    <<: *api-worker-env
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    minio: { condition: service_healthy }
+    graph: { condition: service_healthy }
+    milvus: { condition: service_healthy }
+
+services:
+  api:
+    <<: *python-base
+    ports:
+      - "5050:5050"
+    command: >
+      sh -c "if [ \"$$BACKEND_RELOAD\" = \"true\" ]; then
+        uvicorn server.main:app --host 0.0.0.0 --port 5050 --reload --reload-dir /app/server --reload-dir /app/package;
+      else
+        uvicorn server.main:app --host 0.0.0.0 --port 5050;
+      fi"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5050/api/system/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 8
+      start_period: 180s
+
+  worker:
+    <<: *python-base
+    command: >
+      sh -c "if [ \"$$BACKEND_RELOAD\" = \"true\" ]; then
+        watchfiles \"arq server.worker_main.WorkerSettings\" /app/server /app/package;
+      else
+        arq server.worker_main.WorkerSettings;
+      fi"
+    healthcheck: { disable: true }
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: development
+    image: yunesa-web:0.6.0
+    volumes:
+      - ./web/src:/app/src
+      - ./web/public:/app/public
+      - ./web/index.html:/app/index.html
+      - ./web/vite.config.js:/app/vite.config.js
+    ports:
+      - "5173:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app-network
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://api:5050
+      - VITE_USE_RUNS_API=${VITE_USE_RUNS_API:-false}
+      - VITE_LITE_MODE=${LITE_MODE:-}
+    command: pnpm run server
+    restart: unless-stopped
+
+  graph:
+    image: neo4j:5.26
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+      NEO4J_server_bolt_listen__address: 0.0.0.0:7687
+      NEO4J_server_http_listen__address: 0.0.0.0:7474
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 90s
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - etcd-data:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-yunesa}
+      MINIO_ROOT_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+    volumes:
+      - minio-data:/minio_data
+      - minio-config:/root/.minio
+    command: minio server /minio_data --address 0.0.0.0:9000 --console-address 0.0.0.0:9001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.5.6
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-yunesa}
+      MINIO_SECRET_ACCESS_KEY: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+      MILVUS_LOG_LEVEL: error
+    volumes:
+      - milvus-data:/var/lib/milvus
+      - milvus-logs:/var/lib/milvus/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 60s
+      start_period: 120s
+      timeout: 30s
+      retries: 5
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:${POSTGRES_VERSION:-16}}
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - TZ=${TZ:-Asia/Jakarta}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # ETL & ORCHESTRATION (Profile: etl)
+  # ============================================================================
+
+  etl-worker:
+    build:
+      context: .
+      dockerfile: docker/etl-worker.Dockerfile
+      args:
+        ETL_INSTALL_TEST_DEPS: "true"
+        ETL_INSTALL_KG_DEPS: "true"
+    image: yunesa-etl-worker:latest
+    profiles: ["etl"]
+    networks:
+      - app-network
+    env_file:
+      - .env
+    environment:
+      <<: *api-worker-env
+      PYTHONPATH: /app/package
+      PYTHONDONTWRITEBYTECODE: "1"
+      ETL_RUN_MODE: ${ETL_RUN_MODE:-sample}
+      ETL_SAMPLE_SIZE: ${ETL_SAMPLE_SIZE:-5}
+      ETL_ENRICH_MAX_PAPERS_PER_RUN: ${ETL_ENRICH_MAX_PAPERS_PER_RUN:-5}
+      ETL_STORAGE_TYPE: ${ETL_STORAGE_TYPE:-local}
+      ETL_FORCE_EXTRACT: ${ETL_FORCE_EXTRACT:-false}
+      ETL_FRESHNESS_HOURS: ${ETL_FRESHNESS_HOURS:-72}
+    volumes:
+      - ./backend/package:/app/package
+      - ./data:/app/data
+      - ./.env:/app/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      graph:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+
+  airflow-init:
+    <<: *airflow-common
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create --username admin --password ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required} --firstname Airflow --lastname Admin --role Admin --email admin@example.com || true
+      "
+
+  airflow-webserver:
+    <<: *airflow-common
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./orchestration/dags:/opt/airflow/dags:ro
+      - airflow-logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/public/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    command: api-server
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./orchestration/dags:/opt/airflow/dags:ro
+      - airflow-logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    command: dag-processor
+
+  airflow-scheduler:
+    <<: *airflow-common
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-dag-processor:
+        condition: service_healthy
+    volumes:
+      - ./orchestration/dags:/opt/airflow/dags:ro
+      - airflow-logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: scheduler
+
+networks:
+  app-network:
+    driver: bridge
+    name: ${DOCKER_NETWORK:-yunesa-network}
+
+volumes:
+  postgres-data:
+  neo4j-data:
+  neo4j-logs:
+  etcd-data:
+  minio-data:
+  minio-config:
+  milvus-data:
+  milvus-logs:
+  redis-data:
+  airflow-logs:
