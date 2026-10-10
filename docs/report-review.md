@@ -2,7 +2,7 @@
 
 Perbaikan berjalan melalui frontend lokal dan API produksi: surface dark mode selaras, chip light mode terbaca, filter Tools dapat ditutup dengan Escape, dan detail pada viewport 390 px serta zoom Chrome 150%/200% dapat diakses. Satu chat nyata serta rename, reload, soft delete, dan logout telah diuji. Hasil dan identitas source tersedia pada [laporan retest](report.md).
 
-Review source empat file frontend tidak menemukan masalah yang menghalangi cakupan tersebut. Lint seluruh frontend dan build terakhir exit 0. Build masih memberi warning chunk besar yang sudah ada; CI tidak diubah.
+Review source empat file frontend tidak menemukan masalah yang menghalangi cakupan tersebut. Lint seluruh frontend dan build terakhir exit 0. Build masih memberi warning chunk besar yang sudah ada; CI belum diubah pada saat retest UI 10 Oktober.
 
 ## Batas penerimaan
 
@@ -21,4 +21,4 @@ Skills tree yang sebelumnya dilaporkan gagal berhasil dimuat dari API produksi. 
 
 [GitLab MR !1](https://gitlab.tugasakhir.space/rizkyyanuark/yunesa/-/merge_requests/1) adalah review utama; [GitHub PR #1](https://github.com/rizkyyanuark/yunesa/pull/1) salinan manual. Keduanya tetap draft untuk review source dan bukti final pada branch `codex/fix-extension-dark-mode`.
 
-Tinjau diff final dan bundle retest sebelum merge. Pipeline hanya berjalan pada protected `main`; merge akan menjalankan build, integrasi, dan deployment produksi otomatis. Branch ini belum memiliki pipeline MR maupun environment staging terpisah. Pengujian selesai; merge dan deployment belum dilakukan.
+Pembaruan CI 11 Oktober menambahkan pemeriksaan frontend dan backend pada MR; lihat [panduan deployment](deployment.md#gate-aplikasi-sebelum-release). Bukti UI tetap merujuk source frontend `7db7258`; perubahan CI tidak mengubah empat file frontend yang diuji. Tinjau diff final, hasil pipeline commit terbaru, dan bukti retest sebelum merge. Merge ke protected `main` akan menjalankan build, integrasi, dan deployment produksi otomatis. Environment staging terpisah belum tersedia; merge dan deployment belum dilakukan.

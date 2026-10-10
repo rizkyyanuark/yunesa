@@ -28,14 +28,25 @@ Folder `data`, `saves`, dan `models` disiapkan kosong untuk state lokal. Dataset
 
 Repository utama adalah [GitLab](https://gitlab.tugasakhir.space/rizkyyanuark/yunesa), dengan remote `origin`. [GitHub](https://github.com/rizkyyanuark/yunesa) menjadi salinan manual dengan remote `github`. Keduanya private.
 
-Setelah membuat commit lokal, kirim branch `main` ke keduanya:
+Kirim branch perubahan ke GitLab, lalu buka Merge Request ke `main`:
 
 ```powershell
-git push origin main
+git push origin HEAD
+```
+
+Pipeline MR menjalankan lint/build frontend dan tes unit backend terpilih serta lint helper pada runner pemeriksaan ID 5. Job MR tidak mempublish image atau memakai secret produksi. Tinjau hasil pipeline pada commit terakhir sebelum merge.
+
+Merge mensyaratkan pipeline berhasil; pipeline skipped tidak memenuhi syarat. Merge ke protected `main` menjalankan build image ARM64, integrasi dengan storage terisolasi, lalu deployment produksi otomatis jika kedua gate lulus. MR !1 tetap draft sampai review selesai.
+
+Sinkronisasi GitHub tetap manual. Setelah MR digabung di GitLab, sinkronkan `main` lokal sebelum mengirim salinannya:
+
+```powershell
+git switch main
+git pull --ff-only origin main
 git push github main
 ```
 
-Sinkronisasi GitHub tetap manual. Pipeline GitLab membangun image ARM64 dari protected `main`, menjalankan tes/lint serta integrasi dengan storage terisolasi, lalu melakukan deployment melalui wrapper pada server produksi. Pipeline 36 dari commit `a805264` telah lulus build, integrasi, dan gate produksi pada 10 Oktober 2026. Status release dan batas baseline dicatat di [panduan deployment](docs/deployment.md) serta [bukti DEP-001](docs/evidence/dep-001-2026-10-10.md).
+Pipeline 36 dari commit `a805264` telah lulus build, integrasi, dan gate produksi pada 10 Oktober 2026. Status release dan batas baseline dicatat di [panduan deployment](docs/deployment.md) serta [bukti DEP-001](docs/evidence/dep-001-2026-10-10.md).
 
 ## Menyiapkan lingkungan lokal
 
