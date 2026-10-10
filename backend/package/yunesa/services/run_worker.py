@@ -381,6 +381,7 @@ async def _worker_shutdown(ctx):
 
 class WorkerSettings:
     functions = [process_agent_run]
+    health_check_interval = 30
     max_tries = 2
     retry_jobs = True
     job_timeout = 900

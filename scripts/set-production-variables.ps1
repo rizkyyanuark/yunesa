@@ -18,7 +18,8 @@ powershell.exe -NoProfile -File .\scripts\set-production-variables.ps1 -GlabPath
 param(
     [uri] $Repository = 'https://gitlab.tugasakhir.space/rizkyyanuark/yunesa',
     [string] $GlabPath,
-    [switch] $ValidateOnly
+    [switch] $ValidateOnly,
+    [switch] $AdminPasswordOnly
 )
 
 Set-StrictMode -Version Latest
@@ -135,7 +136,7 @@ function Find-ProductionVariable {
 }
 
 function Read-MaskedValue {
-    param([string] $Key, [string[]] $VariableNames, [switch] $HttpsUrl)
+    param([string] $Key, [string[]] $VariableNames, [switch] $HttpsUrl, [switch] $AdminPassword)
     while ($true) {
         $secret = Read-Host "$Key (input disembunyikan; q untuk batal)" -AsSecureString
         $buffer = [IntPtr]::Zero
@@ -164,8 +165,20 @@ function Read-MaskedValue {
                 $valid = [uri]::TryCreate($url, [System.UriKind]::Absolute, [ref] $parsedUrl) -and $parsedUrl.Scheme -eq 'https' -and -not [string]::IsNullOrEmpty($parsedUrl.Host) -and [string]::IsNullOrEmpty($parsedUrl.UserInfo)
                 $url = $null
             }
+            if ($valid -and $AdminPassword) {
+                $hasLower = $false; $hasUpper = $false; $hasDigit = $false; $hasSymbol = $false
+                for ($index = 0; $index -lt $secret.Length; $index++) {
+                    $character = [char] [System.Runtime.InteropServices.Marshal]::ReadInt16($buffer, $index * 2)
+                    if ([char]::IsLower($character)) { $hasLower = $true }
+                    if ([char]::IsUpper($character)) { $hasUpper = $true }
+                    if ([char]::IsDigit($character)) { $hasDigit = $true }
+                    if (-not [char]::IsLetterOrDigit($character)) { $hasSymbol = $true }
+                }
+                $valid = $secret.Length -ge 12 -and $secret.Length -le 128 -and $hasLower -and $hasUpper -and $hasDigit -and $hasSymbol
+            }
             if ($valid) { $accepted = $true; return $secret }
-            Write-Host "$Key harus 8-10000 karakter, satu baris tanpa spasi, dan berbeda dari nama variabel. URL Supabase harus HTTPS."
+            if ($AdminPassword) { Write-Host 'ADMIN_PASSWORD harus 12-128 karakter, memuat huruf besar, huruf kecil, angka, dan simbol; tanpa spasi untuk masking GitLab.' }
+            else { Write-Host "$Key harus 8-10000 karakter, satu baris tanpa spasi, dan berbeda dari nama variabel. URL Supabase harus HTTPS." }
         }
         finally {
             if ($buffer -ne [IntPtr]::Zero) { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($buffer) }
@@ -214,8 +227,12 @@ try {
     }
 
     Write-Host 'Masukkan credential hanya di terminal lokal ini. Belum ada perubahan hingga Anda mengetik SIMPAN.'
-    $keys = @('GEMINI_API_KEY', 'SILICONFLOW_API_KEY', 'GLOBAL_PASSWORD', 'JWT_SECRET_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY')
+    $keys = @('GEMINI_API_KEY', 'SILICONFLOW_API_KEY', 'GLOBAL_PASSWORD', 'JWT_SECRET_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ADMIN_PASSWORD')
     $variableNames = @($metadata | ForEach-Object { $_.key }) + $keys
+    if ($AdminPasswordOnly) {
+        $planned.Add([pscustomobject]@{ Key = 'ADMIN_PASSWORD'; Value = (Read-MaskedValue -Key 'ADMIN_PASSWORD' -VariableNames $variableNames -AdminPassword); Generated = $false })
+    }
+    else {
     foreach ($key in @('GEMINI_API_KEY', 'SILICONFLOW_API_KEY')) {
         $planned.Add([pscustomobject]@{ Key = $key; Value = (Read-MaskedValue -Key $key -VariableNames $variableNames); Generated = $false })
     }
@@ -230,6 +247,7 @@ try {
     if ($useSupabase -eq 'y') {
         $planned.Add([pscustomobject]@{ Key = 'SUPABASE_URL'; Value = (Read-MaskedValue -Key 'SUPABASE_URL' -VariableNames $variableNames -HttpsUrl); Generated = $false })
         $planned.Add([pscustomobject]@{ Key = 'SUPABASE_SERVICE_ROLE_KEY'; Value = (Read-MaskedValue -Key 'SUPABASE_SERVICE_ROLE_KEY' -VariableNames $variableNames); Generated = $false })
+    }
     }
     Write-Host "Tujuan: $($Repository.AbsoluteUri.TrimEnd('/')); scope: $scope; variabel: $($planned.Key -join ', ')."
     if ((Read-Host 'Ketik SIMPAN untuk menyimpan; input lain membatalkan') -cne 'SIMPAN') { throw [System.OperationCanceledException]::new('Input cancelled.') }

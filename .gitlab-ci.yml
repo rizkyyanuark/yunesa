@@ -1,0 +1,56 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"'
+    - when: never
+
+stages: [build, deploy]
+
+build-baseline:
+  stage: build
+  image: docker:26-cli
+  tags: [arm64-builder, docker, build]
+  interruptible: true
+  timeout: 2h
+  before_script:
+    - apk add --no-cache bash python3
+  script:
+    - bash scripts/ci-build.sh
+  artifacts:
+    when: always
+    paths:
+      - artifacts/api-image.json
+      - artifacts/web-image.json
+      - artifacts/minio-image.json
+      - artifacts/baseline-unit.xml
+    reports:
+      junit: artifacts/baseline-unit.xml
+      dotenv: artifacts/images.env
+    expire_in: 30 days
+
+deploy-production:
+  stage: deploy
+  tags: [yunesa-prod, deploy]
+  needs: [build-baseline]
+  resource_group: yunesa-production
+  interruptible: false
+  timeout: 30m
+  environment:
+    name: production
+    url: https://yunesa.tugasakhir.space
+  script:
+    - python3 scripts/production-request.py deploy
+
+rollback-production:
+  stage: deploy
+  tags: [yunesa-prod, deploy]
+  needs: [deploy-production]
+  resource_group: yunesa-production
+  interruptible: false
+  timeout: 30m
+  when: manual
+  allow_failure: true
+  environment:
+    name: production
+    url: https://yunesa.tugasakhir.space
+  script:
+    - python3 scripts/production-request.py rollback

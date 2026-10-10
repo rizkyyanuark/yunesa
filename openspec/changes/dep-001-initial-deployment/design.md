@@ -2,6 +2,10 @@
 
 Status: rencana deployment. Dokumen ini belum membuktikan kompatibilitas storage, pipeline aktif, atau aplikasi siap digunakan.
 
+Pembaruan implementasi 10 Oktober 2026: pipeline build/deploy/rollback dan wrapper root tersedia. Build memakai tiga image digest API/web/MinIO ARM64; MinIO berasal dari source resmi yang dikunci. Runner 1/2 telah diassign ke project 6 dan protected/locked; CI project legacy 3 dinonaktifkan karena runner tidak dapat dilepas dari owner project. HTTPS registry telah memberi auth challenge setelah alias hosts usang dihapus. Caddy dan TLS origin telah diuji sampai instance yang benar. Bukti login/push/pull Docker, workload aplikasi, provider, dan pemulihan release masih menunggu job nyata.
+
+Bootstrap admin memakai `ADMIN_PASSWORD` terpisah yang disimpan sebagai variable production protected/masked/hidden, dengan aturan password aplikasi tetap berlaku. `/api/auth/initialize` ditolak melalui Nginx publik; wrapper memasukkan credential melalui stdin ke probe dalam container API, kemudian memakai endpoint auth nyata pada localhost. Profil `/api/auth/me` memakai dependency yang mewajibkan login, sehingga request tanpa token harus 401. `GLOBAL_PASSWORD` dipakai storage, bukan password login. API/worker tidak menerima admin credential sebagai environment.
+
 ## Arsitektur baseline
 
 Runner build menghasilkan image API dan web untuk platform server. GitLab project Yunesa menyimpan image bertag commit. Shell runner deployment ID 2 akan menjalankan wrapper lokal yang mengambil image dan menjalankan Compose pada server aplikasi 2 GB setelah konfigurasi runner diperiksa. Pipeline tidak memerlukan private key SSH; key administrasi hanya dipakai saat bootstrap server. Nginx web meneruskan `/api/` ke API; PostgreSQL, Redis, Memgraph, dan Qdrant melayani jaringan internal. Worker memakai image API yang sama apabila chat melalui Arq diaktifkan. ETL/Airflow tetap di luar baseline.

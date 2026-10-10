@@ -1,6 +1,6 @@
 # Deployment baseline Yunesa
 
-Tanggal rencana: 9 Oktober 2026 (Asia/Jakarta). Status: CI/CD dan deployment aplikasi baru belum diaktifkan; credentials dan acceptance runtime masih pending. Kontrak perubahan: [DEP-001](../openspec/changes/dep-001-initial-deployment/proposal.md).
+Pembaruan: 10 Oktober 2026 (Asia/Jakarta). Pipeline dan wrapper produksi telah diimplementasikan; build ARM64 serta acceptance aplikasi produksi belum selesai. Lima variable produksi telah diverifikasi melalui metadata, tanpa mengambil nilainya. Kontrak perubahan: [DEP-001](../openspec/changes/dep-001-initial-deployment/proposal.md).
 
 ## Keputusan yang berlaku
 
@@ -32,8 +32,9 @@ Secret CI memakai variable individual protected, dengan raw value dan environmen
 | `CI_REGISTRY`, `CI_REGISTRY_IMAGE`, `CI_REGISTRY_USER`, `CI_REGISTRY_PASSWORD` | Variable bawaan GitLab untuk job build/publish | Jangan membuat salinan token job di source. |
 | `GLOBAL_PASSWORD` | Secret layanan lokal | Protected/masked/raw, scope `production`; buat hanya bila absent. |
 | `JWT_SECRET_KEY` | Signing secret aplikasi | Protected/masked/raw, scope `production`; buat hanya bila absent. |
-| `GEMINI_API_KEY` | Provider Gemini | Protected/masked/raw, scope `production`; nilai pending. |
-| `SILICONFLOW_API_KEY` | Provider SiliconFlow | Protected/masked/raw, scope `production`; nilai pending. |
+| `GEMINI_API_KEY` | Provider Gemini | Protected/masked/hidden/raw, scope `production`; metadata tersedia, pemanggilan provider pending. |
+| `SILICONFLOW_API_KEY` | Provider SiliconFlow | Protected/masked/hidden/raw, scope `production`; metadata tersedia, pemanggilan provider pending. |
+| `ADMIN_PASSWORD` | Password akun awal `rizkyyanuark`, berbeda dari password storage | Protected/masked/hidden/raw, scope `production`; metadata tersedia. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Provider Supabase bila digunakan | Opsional; protected/raw, scope `production`; key masked. |
 | Credential `read_registry` pada server | Pull image dari registry project | Token dengan scope yang diperlukan; nilai pending. |
 | DNS/TLS dan akses proxy | Domain menuju layanan baru | Periksa route dan sertifikat sebelum smoke publik. |
@@ -45,9 +46,10 @@ Helper mendukung Windows PowerShell 5.1 dan PowerShell 7, dengan `glab` yang sud
 ```powershell
 powershell.exe -NoProfile -File scripts/set-production-variables.ps1 -ValidateOnly
 powershell.exe -NoProfile -File scripts/set-production-variables.ps1
+powershell.exe -NoProfile -File scripts/set-production-variables.ps1 -AdminPasswordOnly
 ```
 
-Perintah pertama membaca metadata tanpa mengambil nilai variable. Perintah kedua menerima input lokal, mempertahankan password yang sudah ada, lalu membuat atau memperbarui provider key. Variable baru dibuat hidden; GitLab tidak mengizinkan perubahan hidden pada variable visible yang sudah ada. Keberadaan script dan pemeriksaan sintaks tidak membuktikan credentials sudah tersimpan atau provider berhasil dipanggil.
+Perintah pertama membaca metadata tanpa mengambil nilai variable. Perintah kedua menerima input lokal, mempertahankan password yang sudah ada, lalu membuat atau memperbarui provider key. Perintah ketiga hanya mengisi password admin: 12–128 karakter dengan huruf besar, huruf kecil, angka, dan simbol, sesuai kontrak auth aplikasi. Variable baru dibuat hidden; GitLab tidak mengizinkan perubahan hidden pada variable visible yang sudah ada. Metadata tidak membuktikan provider berhasil dipanggil.
 
 Checklist environment aplikasi:
 
@@ -63,9 +65,19 @@ Checklist environment aplikasi:
 
 ## Gate aplikasi sebelum release
 
-Periksa Compose tanpa mencetak konfigurasi hasil interpolasi yang memuat secret. Build API/web dari dependency frozen dan source commit yang sama. Deploy image yang telah dibangun pada runner; jangan build pada server aplikasi 2 GB. Perintah pipeline yang belum diimplementasikan tidak tersedia sebagai prosedur siap jalan.
+Implementasi pipeline ada pada [GitLab CI](../.gitlab-ci.yml) dan [build helper](../scripts/ci-build.sh). Push protected `main` membangun API/web/MinIO ARM64 pada runner ID 1, menjalankan tes backend dan lint, lalu mengirim digest image ke job environment `production` pada shell runner ID 2. Job deploy memakai resource group tunggal. Rollback merupakan job manual dan memerlukan dua release yang telah lolos gate.
 
-Sebelum startup dengan secret produksi, perbaiki [log koneksi PostgreSQL](../backend/package/yunesa/storage/postgres/manager.py): pesan inisialisasi saat ini memasukkan bagian URL yang memuat username/password. Jangan mengirim log startup mentah ke output CI atau percakapan sebelum kredensial dihapus dari pesan tersebut. Konfigurasi produksi juga belum menyediakan MinIO yang digunakan jalur upload; operasi upload harus mempunyai storage nyata dan bukti uji sebelum dianggap siap.
+Bootstrap administratif memakai [installer](../scripts/install-deployment-host.py) dari source commit yang sama: `sudo python3 scripts/install-deployment-host.py --source /path/to/committed/source`. Installer menempatkan wrapper dan konfigurasi milik root di `/opt/yunesa-app`; sudoers hanya mengizinkan `/opt/yunesa-app/bin/deploy deploy` dan `rollback`. Request secret dikirim melalui stdin JSON oleh [request helper](../scripts/production-request.py), kemudian disimpan pada berkas root600. `ADMIN_PASSWORD` hanya masuk berkas bootstrap admin; tidak menjadi environment API/worker. Token registry job hanya dipakai pada Docker config sementara.
+
+MinIO dibangun dari source upstream resmi commit `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` melalui [Dockerfile](../docker/minio.Dockerfile), karena image publik yang diperiksa tidak dapat ditarik. Image menyertakan lisensi dan arsip source commit tersebut. Keberhasilan compile/run ARM64 masih menjadi gate build. Nginx meneruskan GET/HEAD object bucket `public`; listing, write lewat proxy, dan bucket `knowledgebases` ditolak.
+
+Inspeksi terbaru: runner ID 1/2 telah diassign ke project ID 6, locked/protected dan tidak menerima job tanpa tag. Project lama ID 3 masih menjadi owner runner karena GitLab tidak mengizinkan unassign owner; fitur CI project lama telah dinonaktifkan. Runner build terverifikasi alive. Job build memakai HTTPS publik tanpa extra_hosts lama; koneksi service runner build tetap memakai HTTP VPC yang sudah ada. Dua cache compiler Rust yang tidak dipakai container telah dihapus untuk menyediakan sekitar 16 GB ruang build; data aplikasi tetap pada volume masing-masing.
+
+Host produksi telah menghapus alias private GitLab/registry dari `/etc/hosts` dengan backup dan flush DNS. HTTPS registry memberi 401 dengan Bearer challenge; login/push/pull Docker belum dibuktikan. Caddy paket Ubuntu aktif dengan HTTP dan HTTPS menuju localhost8088, tanpa redirect otomatis, serta header upstream HTTPS. Probe sementara membuktikan Cloudflare mencapai instance yang benar lalu dihapus. Sertifikat origin Let's Encrypt terverifikasi dan berlaku hingga 7 Januari 2027. App masih memberi 502 sampai backend tersedia. Backup konfigurasi proxy berada di `/var/backups/yunesa/proxy-bootstrap-20261009T164954Z/`.
+
+Periksa Compose tanpa mencetak konfigurasi hasil interpolasi yang memuat secret. Build API/web dari dependency frozen dan source commit yang sama. Deploy image yang telah dibangun pada runner; jangan build pada server aplikasi 2 GB. Bootstrap admin dilakukan melalui API internal dengan input stdin, sementara Nginx publik menolak endpoint inisialisasi. Gate memeriksa login, 401 tanpa token, state percakapan, chat async, dan object storage nyata.
+
+[Log koneksi PostgreSQL](../backend/package/yunesa/storage/postgres/manager.py) sudah diubah agar tidak memuat URL credentials. Compose sekarang menyediakan MinIO; gate melakukan upload/read/delete object sintetis dan memeriksa respons publik sesuai byte serta penolakan bucket private. Tes unit build memakai placeholder provider khusus pengujian logika; integrasi provider produksi tetap membutuhkan key nyata dan belum dianggap lolos karena unit tests.
 
 Sesudah startup, bukti minimum mencakup query PostgreSQL, ping Redis, query Memgraph, dan request Qdrant dengan credential nyata. Lanjutkan dengan halaman web dan API lewat domain, login/me, penolakan request tanpa token, serta satu write/read state aplikasi yang diizinkan. Worker/queue harus dibuktikan bila chat menggunakannya. Uji provider nyata dengan prompt kecil dan catat model/peran tanpa key.
 

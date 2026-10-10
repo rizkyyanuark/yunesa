@@ -1,288 +1,183 @@
-name: yunesa-prod
+name: yunesa-app
 
 x-api-worker-env: &api-worker-env
   RUNNING_IN_DOCKER: "true"
-  LITE_MODE: ${LITE_MODE:-false}
   YUNESA_ENV: production
+  LITE_MODE: "false"
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY required}
-  MODEL_DIR_IN_DOCKER: /models
-  SUPABASE_URL: ${SUPABASE_URL}
-  SUPABASE_KEY: ${SUPABASE_KEY}
-  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-${SUPABASE_SERVICE_KEY:-}}
+  GLOBAL_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
   POSTGRES_URL: postgresql+asyncpg://postgres:${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}@postgres:5432/postgres
   REDIS_URL: redis://redis:6379/0
-  # Memgraph uses the Bolt protocol on port 7687, matching Neo4j driver semantics
-  NEO4J_URI: ${NEO4J_URI:-bolt://graph:7687}
-  NEO4J_USERNAME: ${NEO4J_USERNAME:-}
-  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}}
-  NEO4J_DATABASE: ${NEO4J_DATABASE:-memgraph}
-  # Qdrant HTTP endpoint with disk-backed payload storage
-  QDRANT_URI: ${QDRANT_URI:-http://vector:6333}
+  YUNESA_VECTOR_BACKEND: qdrant
+  QDRANT_URI: http://vector:6333
   QDRANT_API_KEY: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
-  MILVUS_URI: ${MILVUS_URI:-http://vector:6333}
-  # Local filesystem avatar storage replaces object storage
+  # Empty Milvus/Zilliz values prevent inherited development settings selecting another adapter.
+  MILVUS_URI: ""
+  MILVUS_TOKEN: ""
+  ZILLIZ_URI: ""
+  ZILLIZ_TOKEN: ""
+  NEO4J_URI: bolt://graph:7687
+  NEO4J_USERNAME: ""
+  NEO4J_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+  NEO4J_DATABASE: memgraph
+  MINIO_URI: http://minio:9000
+  MINIO_ROOT_USER: yunesa
+  MINIO_ROOT_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+  MINIO_PUBLIC_BASE_URL: ${MINIO_PUBLIC_BASE_URL:-http://minio:9000}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY required}
+  SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:?SILICONFLOW_API_KEY required}
+  MODEL_DIR: /models
+  MODEL_DIR_IN_DOCKER: /models
   AVATAR_STORAGE_PATH: /app/data/avatars
   AVATAR_URL_PREFIX: /avatars
   SANDBOX_ENABLED: "false"
-  YUNESA_ALIAS_SUGGESTIONS_PATH: ${YUNESA_ALIAS_SUGGESTIONS_PATH:-/app/data/kg/entity_resolution/concept_alias_suggestions.json}
-  YUNESA_ALIAS_CURATION_STORE: ${YUNESA_ALIAS_CURATION_STORE:-/app/data/kg/entity_resolution/alias_curation_store.json}
-  YUNESA_APPROVED_CONCEPT_ALIASES_PATH: ${YUNESA_APPROVED_CONCEPT_ALIASES_PATH:-/app/data/kg/entity_resolution/concept_aliases.approved.yml}
-  YUNESA_ENFORCE_QUALITY_GATES: ${YUNESA_ENFORCE_QUALITY_GATES:-true}
-  OPIK_ENABLED: ${OPIK_ENABLED:-true}
-  OPIK_API_KEY: ${OPIK_API_KEY:-}
-  OPIK_WORKSPACE: ${OPIK_WORKSPACE:-}
-  OPIK_PROJECT_NAME: ${OPIK_PROJECT_NAME:-yunesa-academic-graphrag}
-  OPIK_ENVIRONMENT: ${OPIK_ENVIRONMENT:-production}
   BACKEND_RELOAD: "false"
   LANGGRAPH_CHECKPOINTER_BACKEND: postgres
-  NO_PROXY: localhost,127.0.0.1,vector,graph,postgres,redis
-  no_proxy: localhost,127.0.0.1,vector,graph,postgres,redis
+  OPIK_ENABLED: "false"
+  NO_PROXY: localhost,127.0.0.1,vector,graph,postgres,redis,minio
+  no_proxy: localhost,127.0.0.1,vector,graph,postgres,redis,minio
 
 x-default-logging: &default-logging
-  driver: "json-file"
+  driver: json-file
   options:
     max-size: "10m"
     max-file: "3"
 
-x-airflow-common: &airflow-common
-  build:
-    context: .
-    dockerfile: docker/airflow.Dockerfile
-  image: yunesa-airflow:prod
-  profiles: ["etl"]
-  logging: *default-logging
-  networks:
-    - app-network
-  env_file:
-    - .env
-  environment:
-    AIRFLOW_ENV: production
-    ENVIRONMENT: prod
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}@postgres:5432/postgres
-    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-${JWT_SECRET_KEY:?JWT_SECRET_KEY required}}
-    AIRFLOW__WEBSERVER__RBAC: "true"
-    AIRFLOW__LOGGING__LOG_CLEANUP_LOGS: "true"
-    AIRFLOW__LOGGING__LOG_RETENTION_DAYS: "7"
-    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: "60"
-    AIRFLOW__CORE__PARALLELISM: "2"
-    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "2"
-    _AIRFLOW_WWW_USER_USERNAME: admin
-    _AIRFLOW_WWW_USER_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
-    DOCKER_NETWORK: ${PROD_DOCKER_NETWORK:-yunesa-prod-network}
-    HOST_DATA_DIR: ${HOST_DATA_DIR:-/home/ubuntu/yunesa/data}
-    HOST_PACKAGE_DIR: ${HOST_PACKAGE_DIR:-/home/ubuntu/yunesa/backend/package}
-    ETL_WORKER_IMAGE: ${PROD_ETL_WORKER_IMAGE:-yunesa-etl-worker:prod}
-    ETL_WORKER_MOUNT_CODE: "false"
-    ETL_RUN_MODE: ${ETL_RUN_MODE:-incremental}
-    ETL_SAMPLE_SIZE: ${ETL_SAMPLE_SIZE:-50}
-    ETL_ENRICH_MAX_PAPERS_PER_RUN: ${ETL_ENRICH_MAX_PAPERS_PER_RUN:-0}
-    ETL_STORAGE_TYPE: ${ETL_STORAGE_TYPE:-local}
-    ETL_FORCE_EXTRACT: ${ETL_FORCE_EXTRACT:-false}
-    ETL_FRESHNESS_HOURS: ${ETL_FRESHNESS_HOURS:-72}
-    AIRFLOW_VAR_SUPABASE_URL_SECRET: ${SUPABASE_URL}
-    AIRFLOW_VAR_SUPABASE_KEY_SECRET: ${SUPABASE_KEY}
-    AIRFLOW_VAR_SUPABASE_SERVICE_ROLE_KEY_SECRET: ${SUPABASE_SERVICE_ROLE_KEY:-${SUPABASE_SERVICE_KEY:-}}
-    AIRFLOW_VAR_SCIVAL_EMAIL_SECRET: ${SCIVAL_EMAIL}
-    AIRFLOW_VAR_SCIVAL_PASS_SECRET: ${SCIVAL_PASS}
-    AIRFLOW_VAR_SEMANTIC_SCHOLAR_API_KEY_SECRET: ${SEMANTIC_SCHOLAR_API_KEY:-${S2_API_KEY:-}}
-    AIRFLOW_VAR_BD_USER_UNLOCKER_SECRET: ${BD_USER_UNLOCKER}
-    AIRFLOW_VAR_BD_PASS_UNLOCKER_SECRET: ${BD_PASS_UNLOCKER}
-    AIRFLOW_VAR_BD_USER_SERP_SECRET: ${BD_USER_SERP}
-    AIRFLOW_VAR_BD_PASS_SERP_SECRET: ${BD_PASS_SERP}
-    AIRFLOW_VAR_BD_SCRAPING_BROWSER_URL_SECRET: ${BD_SCRAPING_BROWSER_URL:-}
-    AIRFLOW_VAR_GROQ_API_KEY_SECRET: ${GROQ_API_KEY}
-    AIRFLOW_VAR_BRIGHT_DATA_HOST: "brd.superproxy.io:33335"
+x-app-volumes: &app-volumes
+  - ${YUNESA_STATE_ROOT:?YUNESA_STATE_ROOT required}/saves:/app/saves
+  - ${YUNESA_STATE_ROOT:?YUNESA_STATE_ROOT required}/data:/app/data
+  - ${YUNESA_STATE_ROOT:?YUNESA_STATE_ROOT required}/models:/models
 
 services:
   api:
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-    image: yunesa-api:prod
-    restart: always
+    image: ${YUNESA_API_IMAGE:?YUNESA_API_IMAGE required}
+    restart: unless-stopped
     logging: *default-logging
     mem_limit: 384m
     memswap_limit: 1g
-    volumes:
-      - ./saves:/app/saves
-      - ./data:/app/data
-      - ./data/avatars:/app/data/avatars
-      - ${MODEL_DIR:-./models}:/models
-      - ./backend/package/yunesa:/app/package/yunesa
-    networks:
-      - app-network
-    env_file:
-      - .env
-    environment:
-      <<: *api-worker-env
-    command: uvicorn server.main:app --host 0.0.0.0 --port 5050
-    ports:
-      - "5050:5050"
+    volumes: *app-volumes
+    networks: [app-network]
+    env_file: [.env]
+    environment: *api-worker-env
+    command: uvicorn server.main:app --host 0.0.0.0 --port 5050 --proxy-headers --forwarded-allow-ips=*
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5050/api/system/health || exit 1"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:5050/api/system/health"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      graph:
-        condition: service_healthy
-      vector:
-        condition: service_healthy
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      graph: {condition: service_healthy}
+      vector: {condition: service_healthy}
+      minio: {condition: service_healthy}
 
   worker:
-    image: yunesa-api:prod
-    restart: always
+    image: ${YUNESA_API_IMAGE:?YUNESA_API_IMAGE required}
+    restart: unless-stopped
     logging: *default-logging
     mem_limit: 256m
     memswap_limit: 1g
-    volumes:
-      - ./saves:/app/saves
-      - ./data:/app/data
-      - ./data/avatars:/app/data/avatars
-      - ${MODEL_DIR:-./models}:/models
-      - ./backend/package/yunesa:/app/package/yunesa
-    networks:
-      - app-network
-    env_file:
-      - .env
-    environment:
-      <<: *api-worker-env
+    volumes: *app-volumes
+    networks: [app-network]
+    env_file: [.env]
+    environment: *api-worker-env
     command: arq server.worker_main.WorkerSettings
     healthcheck:
-      disable: true
+      test: ["CMD", "arq", "--check", "server.worker_main.WorkerSettings"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     depends_on:
-      api:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      graph:
-        condition: service_healthy
-      vector:
-        condition: service_healthy
+      api: {condition: service_healthy}
 
   web:
-    build:
-      context: .
-      dockerfile: docker/web.Dockerfile
-      target: production
-    image: yunesa-web:prod
-    restart: always
+    image: ${YUNESA_WEB_IMAGE:?YUNESA_WEB_IMAGE required}
+    restart: unless-stopped
     logging: *default-logging
     mem_limit: 64m
-    ports:
-      - "80:80"
+    ports: ["127.0.0.1:8088:80"]
     volumes:
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./data/avatars:/app/data/avatars:ro
-    networks:
-      - app-network
+      - ${YUNESA_STATE_ROOT:?YUNESA_STATE_ROOT required}/data/avatars:/app/data/avatars:ro
+    networks: [app-network]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
-      api:
-        condition: service_healthy
+      api: {condition: service_healthy}
 
-  # In-memory C++ graph database replacing JVM Neo4j
   graph:
-    image: memgraph/memgraph:latest
-    restart: always
+    image: memgraph/memgraph:3.6.0@sha256:fa51fa1f64bce77fc20fc351632f684fd22afc7916febaba30fc2af24815f5a4
+    restart: unless-stopped
     logging: *default-logging
-    mem_limit: 450m
+    mem_limit: 384m
     memswap_limit: 1g
     command:
-      - "--telemetry-enabled=false"
-      - "--memory-limit=384"
-      - "--log-level=WARNING"
+      - --telemetry-enabled=false
+      - --memory-limit=256
+      - --log-level=WARNING
     volumes:
       - memgraph-data:/var/lib/memgraph
-    ports:
-      - "7687:7687"
     healthcheck:
-      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole || exit 0"]
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole --host 127.0.0.1 --port 7687 --use-ssl=false || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
-    networks:
-      - app-network
+    networks: [app-network]
 
-  # Lightweight web visualization for Memgraph graphs
-  graph-lab:
-    image: memgraph/lab:latest
-    restart: always
-    logging: *default-logging
-    mem_limit: 96m
-    environment:
-      - QUICK_CONNECT_MG_HOST=graph
-      - QUICK_CONNECT_MG_PORT=7687
-    ports:
-      - "3000:3000"
-    depends_on:
-      graph:
-        condition: service_healthy
-    networks:
-      - app-network
-
-  # Rust-based vector search engine with on-disk payload storage
   vector:
-    image: qdrant/qdrant:latest
-    restart: always
+    image: qdrant/qdrant:v1.16.0@sha256:1005201498cf927d835383d0f918b17d8c9da7db58550f169f694455e42d78f4
+    restart: unless-stopped
     logging: *default-logging
-    mem_limit: 200m
+    mem_limit: 192m
     memswap_limit: 512m
     environment:
-      - QDRANT__STORAGE__ON_DISK_PAYLOAD=true
-      - QDRANT__SERVICE__API_KEY=${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
-      - QDRANT__LOG_LEVEL=WARN
+      QDRANT__STORAGE__ON_DISK_PAYLOAD: "true"
+      QDRANT__SERVICE__API_KEY: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+      QDRANT__LOG_LEVEL: WARN
     volumes:
       - qdrant-data:/qdrant/storage
-    ports:
-      - "6333:6333"
-      - "6334:6334"
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 5
       start_period: 15s
-    networks:
-      - app-network
+    networks: [app-network]
 
   postgres:
-    image: postgres:16-alpine
-    restart: always
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    restart: unless-stopped
     logging: *default-logging
-    mem_limit: 200m
+    mem_limit: 160m
     memswap_limit: 512m
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
-      - POSTGRES_DB=postgres
-    command: postgres -c shared_buffers=96MB -c max_connections=30 -c work_mem=4MB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+      POSTGRES_DB: postgres
+    command: postgres -c shared_buffers=64MB -c max_connections=40 -c work_mem=2MB
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./docker/init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 30
-    networks:
-      - app-network
+    networks: [app-network]
 
   redis:
-    image: redis:7-alpine
-    restart: always
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    restart: unless-stopped
     logging: *default-logging
     mem_limit: 64m
-    command: redis-server --appendonly yes --maxmemory 48mb --maxmemory-policy allkeys-lru
+    # Run queue and cancellation state must fail visibly rather than being evicted.
+    command: redis-server --appendonly yes --maxmemory 48mb --maxmemory-policy noeviction
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -290,92 +185,35 @@ services:
       retries: 10
     volumes:
       - redis-data:/data
-    networks:
-      - app-network
+    networks: [app-network]
 
-  etl-worker:
-    build:
-      context: .
-      dockerfile: docker/etl-worker.Dockerfile
-      args:
-        ETL_INSTALL_TEST_DEPS: "false"
-        ETL_INSTALL_KG_DEPS: "true"
-    image: yunesa-etl-worker:prod
-    profiles: ["etl"]
-    restart: "no"
+  minio:
+    image: ${YUNESA_MINIO_IMAGE:?YUNESA_MINIO_IMAGE required}
+    restart: unless-stopped
     logging: *default-logging
-    env_file:
-      - .env
-    networks:
-      - app-network
+    mem_limit: 128m
+    memswap_limit: 512m
     environment:
-      <<: *api-worker-env
-      PYTHONPATH: /app/package
-      PYTHONDONTWRITEBYTECODE: "1"
-      ETL_RUN_MODE: ${ETL_RUN_MODE:-incremental}
-      ETL_SAMPLE_SIZE: ${ETL_SAMPLE_SIZE:-50}
-      ETL_ENRICH_MAX_PAPERS_PER_RUN: ${ETL_ENRICH_MAX_PAPERS_PER_RUN:-0}
-      ETL_STORAGE_TYPE: ${ETL_STORAGE_TYPE:-local}
-      ETL_FORCE_EXTRACT: ${ETL_FORCE_EXTRACT:-false}
-      ETL_FRESHNESS_HOURS: ${ETL_FRESHNESS_HOURS:-72}
+      MINIO_ROOT_USER: yunesa
+      MINIO_ROOT_PASSWORD: ${GLOBAL_PASSWORD:?GLOBAL_PASSWORD required}
+    command: server /data
     volumes:
-      - ./data:/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # Single standalone container running webserver, scheduler, and DAG processor
-  airflow:
-    <<: *airflow-common
-    restart: always
-    logging: *default-logging
-    user: "0:0"
-    mem_limit: 512m
-    memswap_limit: 1g
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./orchestration/dags:/opt/airflow/dags:ro
-      - airflow-logs:/opt/airflow/logs
-      - /var/run/docker.sock:/var/run/docker.sock
+      - minio-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 20s
+      timeout: 5s
       retries: 5
-      start_period: 45s
-    command: standalone
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  tunnel:
-    profiles: ["tunnel"]
-    image: cloudflare/cloudflared:2025.8.1
-    restart: always
-    logging: *default-logging
-    mem_limit: 48m
-    networks:
-      - app-network
-    volumes:
-      - ./cloudflared:/etc/cloudflared:ro
-    command: tunnel --config /etc/cloudflared/config.yaml run
-    depends_on:
-      api:
-        condition: service_healthy
-      web:
-        condition: service_started
+      start_period: 15s
+    networks: [app-network]
 
 networks:
   app-network:
     driver: bridge
-    name: ${PROD_DOCKER_NETWORK:-yunesa-prod-network}
 
 volumes:
   postgres-data:
   memgraph-data:
   qdrant-data:
   redis-data:
-  airflow-logs:
+  minio-data:
