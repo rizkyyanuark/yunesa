@@ -9,8 +9,10 @@ umask 077
 : "${CI_REGISTRY_USER:?}"
 : "${CI_REGISTRY_PASSWORD:?}"
 : "${CI_JOB_ID:?}"
+: "${YUNESA_REGISTRY_ORIGIN_IP:?}"
 [[ "$CI_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Full commit SHA required' >&2; exit 1; }
 [[ "$CI_JOB_ID" =~ ^[0-9]+$ ]] || { echo 'Numeric job ID required' >&2; exit 1; }
+python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "$YUNESA_REGISTRY_ORIGIN_IP"
 architecture=$(docker info --format '{{.Architecture}}')
 [[ "$architecture" == 'aarch64' || "$architecture" == 'arm64' ]] || { echo 'ARM64 Docker build host required' >&2; exit 1; }
 
@@ -31,6 +33,9 @@ docker buildx create --name "$builder" --driver docker-container \
   --driver-opt memory=1g,memory-swap=3g --use >/dev/null
 builder_created=true
 docker buildx inspect --bootstrap >/dev/null
+docker exec "buildx_buildkit_${builder}0" sh -c \
+  'printf "%s registry.tugasakhir.space gitlab.tugasakhir.space\n" "$1" >> /etc/hosts' \
+  sh "$YUNESA_REGISTRY_ORIGIN_IP"
 mkdir -p artifacts
 
 printf 'FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8\n' | \

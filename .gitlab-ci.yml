@@ -8,6 +8,8 @@ stages: [build, deploy]
 build-baseline:
   stage: build
   image: docker:26-cli
+  variables:
+    YUNESA_REGISTRY_ORIGIN_IP: '172.31.1.32'
   tags: [arm64-builder, docker, build]
   interruptible: true
   timeout: 2h
