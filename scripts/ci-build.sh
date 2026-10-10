@@ -33,6 +33,11 @@ builder_created=true
 docker buildx inspect --bootstrap >/dev/null
 mkdir -p artifacts
 
+printf 'FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8\n' | \
+  docker buildx build --platform linux/arm64 --file - \
+  --tag "$CI_REGISTRY_IMAGE/ci-preflight:$CI_JOB_ID" --push .
+echo 'BuildKit registry push preflight passed'
+
 docker buildx build --platform linux/arm64 --file docker/api.Dockerfile \
   --tag "$CI_REGISTRY_IMAGE/api:$CI_COMMIT_SHA" --push --metadata-file artifacts/api-image.json .
 api_digest=$(python3 -c 'import json; print(json.load(open("artifacts/api-image.json"))["containerimage.digest"])')
