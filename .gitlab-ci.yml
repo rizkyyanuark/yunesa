@@ -35,7 +35,7 @@ integration-baseline:
   image: docker:26-cli
   tags: [arm64-builder, docker, build]
   needs: [build-baseline]
-  interruptible: true
+  interruptible: false
   timeout: 45m
   before_script:
     - apk add --no-cache --upgrade python3 libexpat

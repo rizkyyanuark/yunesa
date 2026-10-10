@@ -35,7 +35,7 @@ git push origin main
 git push github main
 ```
 
-Sinkronisasi dan deployment otomatis belum dikonfigurasi. Commit awal menyimpan baseline pengembangan; keberadaan source di repository tidak membuktikan aplikasi telah diuji end-to-end.
+Sinkronisasi GitHub tetap manual. Pipeline GitLab membangun image ARM64 dari protected `main`, menjalankan tes/lint serta integrasi dengan storage terisolasi, lalu melakukan deployment melalui wrapper pada server produksi. Pipeline 36 dari commit `a805264` telah lulus build, integrasi, dan gate produksi pada 10 Oktober 2026. Status release dan batas baseline dicatat di [panduan deployment](docs/deployment.md) serta [bukti DEP-001](docs/evidence/dep-001-2026-10-10.md).
 
 ## Menyiapkan lingkungan lokal
 
@@ -71,11 +71,11 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-## Template produksi
+## Produksi
 
-`docker-compose.prod.yml` adalah template terpisah dengan project `yunesa-prod`. Template ini memakai graph/vector backend yang berbeda dari konfigurasi development. Tinjau konfigurasi, secret, dan image ETL sebelum deployment.
+Deployment di [yunesa.tugasakhir.space](https://yunesa.tugasakhir.space) memakai project Compose `yunesa-app`: web/API, worker Arq, PostgreSQL, Redis, Memgraph, Qdrant, dan MinIO. Server tetap t4g.small 2 GB; ETL/Airflow mati. State baru berada di `/opt/yunesa-app/shared`, terpisah dari volume legacy; secret berasal dari GitLab Variables scope `production`.
 
-Cloudflare Tunnel bersifat opsional melalui profile `tunnel` dan memerlukan konfigurasi lokal di `cloudflared/`. Pipeline deployment otomatis belum disiapkan.
+Gate nyata membuktikan HTTPS, login/API auth, percakapan tersimpan, chat melalui worker, storage, serta Gemini dan SiliconFlow. Rollback antara dua release dengan source/digest sama dan restore PostgreSQL dari backup nyata juga lulus. Ini tidak menyelesaikan ING-001/KG-001/ANS-001: jalur pembangunan indeks yang masih bergantung pada Milvus/Neo4j tetap perlu pekerjaan tersendiri. Bukti backup, rollback, dan restore beserta batasnya dicatat di panduan deployment; kapasitas beban berkelanjutan dan pemulihan seluruh storage belum dibuktikan.
 
 ## Asal komponen
 
