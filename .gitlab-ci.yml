@@ -1,17 +1,102 @@
 workflow:
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"'
     - when: never
 
-stages: [build, integration, deploy]
+stages: [verify, build, integration, deploy]
+
+.protected-main-job:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"'
+    - when: never
+
+.mr-check-template:
+  stage: verify
+  tags: [yunesa-mr]
+  resource_group: yunesa-build-host
+  interruptible: true
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - when: never
+
+verify-frontend:
+  extends: .mr-check-template
+  image: node:22-alpine
+  needs:
+    - job: verify-backend
+      artifacts: false
+  timeout: 45m
+  variables:
+    NODE_OPTIONS: '--max-old-space-size=2048'
+  before_script:
+    - ulimit -c 0
+    - npm install -g pnpm@10.11.0
+  script:
+    - cd web
+    - pnpm install --frozen-lockfile
+    - pnpm exec eslint .
+    - pnpm run build
+
+verify-backend:
+  extends: .mr-check-template
+  image: python:3.12-slim
+  timeout: 45m
+  variables:
+    PYTHONDONTWRITEBYTECODE: '1'
+    UV_COMPILE_BYTECODE: 'false'
+    UV_CONCURRENT_DOWNLOADS: '2'
+    UV_CONCURRENT_BUILDS: '1'
+    UV_HTTP_TIMEOUT: '600'
+    UV_HTTP_RETRIES: '10'
+    UV_PYTHON_DOWNLOADS: 'never'
+    UV_CACHE_DIR: '/tmp/yunesa-uv-cache'
+    UV_PROJECT_ENVIRONMENT: '/tmp/yunesa-mr-venv'
+    UV_LINK_MODE: 'copy'
+    OPIK_ENABLED: 'false'
+    GEMINI_API_KEY: 'unit-test-provider-placeholder'
+    SILICONFLOW_API_KEY: 'unit-test-provider-placeholder'
+  before_script:
+    - python -m pip install --no-cache-dir uv==0.11.8
+  script:
+    - cd backend
+    - uv sync --frozen --group test --group dev
+    - mkdir -p ../artifacts
+    - >-
+      uv run --frozen --group test --group dev pytest
+      test/unit/test_package_import.py test/unit/test_auth_utils.py
+      test/unit/storage/test_conversation_repository.py
+      test/unit/knowledge/test_qdrant_storage.py
+      --junitxml=../artifacts/mr-unit.xml
+    - |
+      python - <<'PY'
+      import xml.etree.ElementTree as ET
+
+      root = ET.parse('../artifacts/mr-unit.xml').getroot()
+      suites = [root] if root.tag == 'testsuite' else list(root.iter('testsuite'))
+      if sum(int(suite.get('skipped', 0)) for suite in suites):
+          raise SystemExit('Required merge request tests were skipped')
+      print('Required merge request tests completed without skips')
+      PY
+    - uv run --frozen --group dev ruff check ../scripts
+  artifacts:
+    when: always
+    paths:
+      - artifacts/mr-unit.xml
+    reports:
+      junit: artifacts/mr-unit.xml
+    expire_in: 30 days
 
 build-baseline:
+  extends: .protected-main-job
   stage: build
   image: docker:26-cli
   variables:
     YUNESA_REGISTRY_ORIGIN_IP: '172.31.1.32'
     BUILDX_NO_DEFAULT_ATTESTATIONS: '1'
   tags: [arm64-builder, docker, build]
+  resource_group: yunesa-build-host
   interruptible: true
   timeout: 2h
   before_script:
@@ -31,9 +116,11 @@ build-baseline:
     expire_in: 30 days
 
 integration-baseline:
+  extends: .protected-main-job
   stage: integration
   image: docker:26-cli
   tags: [arm64-builder, docker, build]
+  resource_group: yunesa-build-host
   needs: [build-baseline]
   interruptible: false
   timeout: 45m
@@ -48,6 +135,7 @@ integration-baseline:
     expire_in: 30 days
 
 deploy-production:
+  extends: .protected-main-job
   stage: deploy
   tags: [yunesa-prod, deploy]
   needs: [build-baseline, integration-baseline]
@@ -61,6 +149,7 @@ deploy-production:
     - python3 scripts/production-request.py deploy
 
 rollback-production:
+  extends: .protected-main-job
   stage: deploy
   tags: [yunesa-prod, deploy]
   needs: [deploy-production]

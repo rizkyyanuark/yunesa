@@ -105,4 +105,102 @@ const handleSubagentAdd = () => {
     }
   }
 }
+
+@media (max-width: 768px) {
+  :global(.app-layout:has(.extensions-view)) {
+    min-width: 0;
+  }
+
+  .extensions-view {
+    min-width: 0;
+
+    :deep(.header-container) {
+      height: auto;
+      flex-shrink: 0;
+      padding: 8px 12px;
+    }
+
+    :deep(.header-title-block) {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+
+    :deep(.view-switcher) {
+      flex-wrap: wrap;
+      padding-left: 0;
+      margin-left: 0;
+      border-left: 0;
+    }
+
+    :deep(.switcher-item) {
+      min-height: 44px;
+    }
+
+    :deep(.layout-wrapper) {
+      flex-direction: column;
+    }
+
+    :deep(.sidebar-list) {
+      width: 100%;
+      flex: 0 0 30%;
+      min-height: 140px;
+      max-height: 260px;
+      border-right: 0;
+      border-bottom: 1px solid var(--gray-150);
+    }
+
+    :deep(.sidebar-tool) {
+      width: 44px;
+      height: 44px;
+    }
+
+    :deep(.main-panel) {
+      min-width: 0;
+      min-height: 0;
+    }
+
+    :deep(.panel-top-bar) {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    :deep(.panel-title-stack),
+    :deep(.title-text-group) {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    :deep(.detail-section-container) {
+      padding: 12px;
+    }
+  }
+}
+
+@media (max-width: 768px) and (max-height: 480px) {
+  .extensions-view {
+    overflow-y: auto;
+
+    .extensions-content {
+      flex: 0 0 480px;
+      height: 480px;
+      min-height: 480px;
+    }
+
+    :deep(.layout-wrapper) {
+      flex: 0 0 auto;
+      height: 480px;
+      min-height: 480px;
+    }
+
+    :deep(.sidebar-list) {
+      flex-basis: 140px;
+    }
+
+    :deep(.main-panel) {
+      min-height: 340px;
+    }
+  }
+}
 </style>

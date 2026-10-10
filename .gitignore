@@ -41,6 +41,10 @@ logs/
 *.bak
 *.tmp
 
+# Local QA evidence is published as review attachments
+/screenshots/
+/yunesa-qa-*.zip
+
 # Local tools and OS files
 .agents/
 .codex/

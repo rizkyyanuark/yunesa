@@ -19,15 +19,24 @@
           </div>
 
           <a-tooltip title="Refresh tools">
-            <a-button class="sidebar-tool" :disabled="loading" @click="fetchTools">
+            <a-button
+              class="sidebar-tool"
+              aria-label="Refresh tools"
+              :disabled="loading"
+              @click="fetchTools"
+            >
               <RotateCw :size="14" />
             </a-button>
           </a-tooltip>
 
           <a-tooltip :title="`Current category：${currentCategoryLabel}`">
-            <a-dropdown trigger="click">
+            <a-dropdown v-model:open="categoryDropdownOpen" trigger="click">
               <a-button
+                ref="categoryTrigger"
                 class="sidebar-tool category-trigger"
+                aria-label="Filter tools by category"
+                aria-haspopup="menu"
+                :aria-expanded="categoryDropdownOpen"
                 :class="{ active: !!selectedCategory }"
               >
                 <SlidersHorizontal :size="14" />
@@ -51,8 +60,13 @@
           <template v-for="(tool, index) in filteredTools" :key="tool.id">
             <div
               class="list-item"
+              role="button"
+              tabindex="0"
+              :aria-pressed="currentTool?.id === tool.id"
               :class="{ active: currentTool?.id === tool.id }"
               @click="selectTool(tool)"
+              @keydown.enter.prevent="selectTool(tool)"
+              @keydown.space.prevent="selectTool(tool)"
             >
               <div class="item-header">
                 <component
@@ -164,7 +178,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   Search,
@@ -182,6 +196,8 @@ import { getToolIcon } from '@/components/ToolCallingResult/toolRegistry'
 const loading = ref(false)
 const searchQuery = ref('')
 const selectedCategory = ref('')
+const categoryDropdownOpen = ref(false)
+const categoryTrigger = ref(null)
 
 const tools = ref([])
 const currentTool = ref(null)
@@ -248,9 +264,30 @@ const selectTool = (record) => {
 
 const handleCategorySelect = ({ key }) => {
   selectedCategory.value = key === 'all' ? '' : key
+  closeCategoryDropdown()
 }
 
-onMounted(fetchTools)
+const closeCategoryDropdown = async () => {
+  categoryDropdownOpen.value = false
+  await nextTick()
+  categoryTrigger.value?.focus()
+}
+
+const handleKeydown = (e) => {
+  if (e.key === 'Escape' && categoryDropdownOpen.value) {
+    e.preventDefault()
+    closeCategoryDropdown()
+  }
+}
+
+onMounted(() => {
+  fetchTools()
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
 
 // Expose methods to the parent component
 defineExpose({
@@ -270,7 +307,7 @@ defineExpose({
       max-width: 100px;
       justify-content: flex-end;
       .tool-tag {
-        color: var(--gray-500);
+        color: var(--gray-700);
         font-size: 11px;
         padding: 0 4px;
         margin: 0;
