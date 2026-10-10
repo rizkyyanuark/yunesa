@@ -682,7 +682,7 @@ defineExpose({
 
     .meta-tag {
       font-size: 11px;
-      color: var(--gray-500);
+      color: var(--gray-600);
       background: var(--gray-50);
       padding: 1px 8px;
       border-radius: 4px;

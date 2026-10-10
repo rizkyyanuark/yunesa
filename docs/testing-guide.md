@@ -10,6 +10,7 @@ Perbaikan dark mode disiapkan lokal dan belum dideploy. Untuk menguji hasil perb
 - Minta pemilik deployment memberikan commit/release yang sedang aktif. Commit checkout lokal dapat berbeda dari release produksi. Jika identitas build belum diketahui, tulis `Unknown`, lalu minta informasi tersebut sebelum menyimpulkan hasil perbaikan.
 - Gunakan akun uji yang diberikan pemilik aplikasi. Halaman `/extensions` memerlukan SuperAdmin; akun tanpa hak tersebut diarahkan ke `/agent`. Jika akses tidak tersedia, catat `Blocked`, jangan mengubah role sendiri.
 - Mulai dengan browser normal, zoom 100%, dan viewport desktop. Ulangi bagian visual utama pada lebar sekitar 390 pixel CSS serta zoom 150% dan 200%. Catat ukuran sebenarnya; jika perangkat kedua tidak tersedia, tandai pemeriksaannya `Not run`.
+- Zoom harus memakai kontrol bawaan browser. CSS `zoom` atau viewport yang diperkecil hanya menjadi bukti reflow terpisah; jangan melabelinya sebagai zoom browser. Jika kontrol otomatis tidak mendukung zoom, catat subpemeriksaan tersebut `Not run` dan kasus yang belum lengkap `Blocked`.
 - Pakai data uji tanpa informasi pribadi. Jangan mengubah model/provider, memasang MCP/Skills, menjalankan ingestion, atau mengganti konfigurasi produksi untuk membuat pemeriksaan lulus.
 
 Tema dipilih dari menu avatar/profil, lalu `Switch to dark mode (Beta)` atau `Switch to light mode`. Pilihan tema disimpan pada browser yang sama; pilihan eksplisit aplikasi harus tetap berlaku sesudah refresh dan perpindahan halaman.
@@ -61,3 +62,12 @@ Untuk setiap temuan, isi langkah bernomor, expected/actual, frekuensi (misalnya 
 Nama bukti disarankan `BUG-001-dark-subagents-desktop.png`. Screenshot harus menunjukkan konteks dan area masalah; crop tambahan boleh memperjelasnya. Untuk error, buka DevTools Console/Network dan ambil pesan, method/path, HTTP status, waktu, serta request/trace ID bila ada. Jangan menyertakan password, API key, token, Authorization, cookie, URL bertoken, data pribadi, atau HAR mentah. Jika HAR dibutuhkan, pemilik aplikasi harus meninjau sanitasi sebelum dibagikan.
 
 Kirim satu bundle `yunesa-qa-YYYYMMDD.zip` berisi `report.md` dari template, folder `screenshots/`, rekaman singkat bila diperlukan, dan `logs-sanitized/` untuk error. Pada pengujian ulang, sebutkan build baru dan BUG-ID lama agar hasil sebelum/sesudah dapat dibandingkan. Berikan bundle kepada pemilik aplikasi untuk direview bersama; dokumen ini tidak mengirim pesan kepada kolega.
+
+Sebelum packaging, jalankan pemeriksaan JSON dari root repository:
+
+```powershell
+python scripts/sanitize-qa-evidence.py --write screenshots/sanitized-network-logs.json
+python scripts/sanitize-qa-evidence.py --check screenshots/sanitized-network-logs.json
+```
+
+Tambahkan semua file JSON bukti yang akan dibagikan sebagai argumen. Pada `--check`, exit 0 berarti tidak ada redaksi tambahan yang dikenali dan exit 1 berarti masih perlu redaksi. `--write` menghasilkan exit 0 setelah sanitasi berhasil; exit 2 berarti file tidak dapat diperiksa atau ditulis. Periksa screenshot secara visual; script tidak memeriksa gambar. Cantumkan HEAD dan hash file bila source masih berupa worktree yang belum di-commit, dan bedakan URL frontend dari backend proxy. Jangan menyebut pengujian lokal terisolasi bila API yang dipakai adalah produksi.
