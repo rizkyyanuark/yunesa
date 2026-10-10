@@ -647,7 +647,7 @@ defineExpose({
     position: relative;
     z-index: 1;
     padding: 24px 24px 20px 24px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 1) 100%);
+    background: linear-gradient(180deg, var(--light-0) 0%, var(--main-0) 100%);
   }
 }
 
@@ -740,14 +740,6 @@ defineExpose({
       color: var(--main-500) !important;
     }
   }
-}
-
-.code-panel {
-  background: #fdfdfd;
-  border: 1px solid var(--gray-150);
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 .hint-box-premium {
