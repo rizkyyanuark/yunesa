@@ -191,6 +191,13 @@ def set_release_link(name: str, release: Path) -> None:
 
 
 def backup(release: Path) -> Path:
+    try:
+        return _backup(release)
+    except (OSError, tarfile.TarError, EOFError) as error:
+        raise DeployError("Backup filesystem/archive operation failed; raw output suppressed") from error
+
+
+def _backup(release: Path) -> Path:
     run(["docker", "pull", "alpine:3.22"], label="Prepare backup helper image")
     compose(release, "stop", "web", label="Stop accepting public application requests")
     active = compose(

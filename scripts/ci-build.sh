@@ -18,19 +18,34 @@ architecture=$(docker info --format '{{.Architecture}}')
 
 builder="yunesa-ci-${CI_JOB_ID}"
 test_container=''
+local_check_images=()
+web_check_image="yunesa-web-check:$CI_JOB_ID"
 docker_config=$(mktemp -d)
 export DOCKER_CONFIG="$docker_config"
+remove_local_check_images() {
+  if ((${#local_check_images[@]})); then
+    if ! docker image rm "${local_check_images[@]}" >/dev/null; then
+      echo 'Could not remove every temporary check image reference' >&2
+    fi
+    local_check_images=()
+  fi
+}
 cleanup() {
+  local exit_status=$?
+  trap - EXIT
+  set +e
   if [[ -n "$test_container" ]]; then docker rm --force "$test_container" >/dev/null; fi
-  docker buildx rm "$builder" >/dev/null
+  remove_local_check_images
+  if $builder_created; then docker buildx rm "$builder" >/dev/null; fi
   rm -r -- "$docker_config"
+  exit "$exit_status"
 }
 builder_created=false
-trap 'if $builder_created; then cleanup; else rm -r -- "$docker_config"; fi' EXIT
+trap cleanup EXIT
 printf '%s' "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
 unset CI_REGISTRY_PASSWORD
 docker buildx create --name "$builder" --driver docker-container \
-  --driver-opt memory=1g,memory-swap=3g --use >/dev/null
+  --driver-opt memory=1280m,memory-swap=3g --use >/dev/null
 builder_created=true
 docker buildx inspect --bootstrap >/dev/null
 docker exec "buildx_buildkit_${builder}0" sh -c \
@@ -50,6 +65,7 @@ docker buildx build --platform linux/arm64 --file docker/api.Dockerfile \
 api_digest=$(python3 -c 'import json; print(json.load(open("artifacts/api-image.json"))["containerimage.digest"])')
 api_image="$CI_REGISTRY_IMAGE/api@$api_digest"
 docker pull "$api_image"
+local_check_images+=("$api_image")
 test_container=$(docker create --memory 1g --memory-swap 3g \
   --env GEMINI_API_KEY=unit-test-provider-placeholder \
   --env SILICONFLOW_API_KEY=unit-test-provider-placeholder --env OPIK_ENABLED=false \
@@ -70,11 +86,14 @@ if sum(int(suite.get('skipped', 0)) for suite in suites):
 PY
 docker rm "$test_container" >/dev/null
 test_container=''
+remove_local_check_images
 
 docker buildx build --platform linux/arm64 --file docker/web.Dockerfile --target development \
   --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/web-build-cache:main" \
-  --tag "yunesa-web-check:$CI_JOB_ID" --load .
-docker run --rm --memory 1g --memory-swap 3g "yunesa-web-check:$CI_JOB_ID" pnpm exec eslint src
+  --tag "$web_check_image" --load .
+local_check_images+=("$web_check_image")
+docker run --rm --memory 1g --memory-swap 3g "$web_check_image" pnpm exec eslint .
+remove_local_check_images
 docker buildx build --platform linux/arm64 --file docker/web.Dockerfile --target production \
   --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/web-build-cache:main" \
   --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/web-build-cache:main,mode=max,image-manifest=true,oci-mediatypes=true" \
