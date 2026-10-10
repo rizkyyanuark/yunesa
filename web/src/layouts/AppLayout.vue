@@ -37,11 +37,6 @@ const openSettingsModal = () => {
   showSettingsModal.value = true
 }
 
-// Handle debug modal close
-const handleDebugModalClose = () => {
-  showDebugModal.value = false
-}
-
 const getRemoteConfig = async () => {
   if (!userStore.isAdmin) return
   try {

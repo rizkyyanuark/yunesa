@@ -10,6 +10,7 @@ build-baseline:
   image: docker:26-cli
   variables:
     YUNESA_REGISTRY_ORIGIN_IP: '172.31.1.32'
+    BUILDX_NO_DEFAULT_ATTESTATIONS: '1'
   tags: [arm64-builder, docker, build]
   interruptible: true
   timeout: 2h

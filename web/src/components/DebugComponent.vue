@@ -242,7 +242,7 @@ const parseLogLine = (line) => {
 
   // Support timestamp formats: 2026-07-31 10:32:48,314 or 2026-07-31 10:32:48
   const match = line.match(
-    /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:[,\.]\d{3})?)\s*[-:]?\s*(\w+)\s*[-:]?\s*([^-:]+?)?\s*[-:]?\s*(.+)$/
+    /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:[,.]\d{3})?)\s*[-:]?\s*(\w+)\s*[-:]?\s*([^-:]+?)?\s*[-:]?\s*(.+)$/
   )
   if (match) {
     return {
@@ -274,7 +274,7 @@ const formatTimestamp = (timestamp) => {
     }
     const date = dayjs(normalizedTimestamp)
     return date.isValid() ? date.format('HH:mm:ss.SSS') : timestamp
-  } catch (err) {
+  } catch {
     return timestamp
   }
 }
@@ -348,7 +348,7 @@ const copyLogs = async () => {
   try {
     await navigator.clipboard.writeText(logText)
     message.success(`Copied ${processedLogs.value.length} log lines to clipboard`)
-  } catch (err) {
+  } catch {
     message.error('Failed to copy logs to clipboard')
   }
 }
