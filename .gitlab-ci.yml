@@ -3,7 +3,7 @@ workflow:
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"'
     - when: never
 
-stages: [build, deploy]
+stages: [build, integration, deploy]
 
 build-baseline:
   stage: build
@@ -30,10 +30,27 @@ build-baseline:
       dotenv: artifacts/images.env
     expire_in: 30 days
 
+integration-baseline:
+  stage: integration
+  image: docker:26-cli
+  tags: [arm64-builder, docker, build]
+  needs: [build-baseline]
+  interruptible: true
+  timeout: 20m
+  before_script:
+    - apk add --no-cache --upgrade python3 libexpat
+  script:
+    - python3 scripts/ci-integration.py
+  artifacts:
+    when: always
+    paths:
+      - artifacts/integration-baseline.json
+    expire_in: 30 days
+
 deploy-production:
   stage: deploy
   tags: [yunesa-prod, deploy]
-  needs: [build-baseline]
+  needs: [build-baseline, integration-baseline]
   resource_group: yunesa-production
   interruptible: false
   timeout: 30m

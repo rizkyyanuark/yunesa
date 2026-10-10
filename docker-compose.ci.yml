@@ -1,0 +1,58 @@
+x-ci-service: &ci-service
+  restart: "no"
+  labels: &ci-labels
+    io.yunesa.ci.run: ${YUNESA_CI_RUN_ID:?YUNESA_CI_RUN_ID required}
+
+services:
+  api:
+    <<: *ci-service
+    env_file: !reset []
+    volumes: !override
+      - ci-data:/app/data
+      - ci-saves:/app/saves
+      - ci-models:/models
+  worker:
+    <<: *ci-service
+    env_file: !reset []
+    volumes: !override
+      - ci-data:/app/data
+      - ci-saves:/app/saves
+      - ci-models:/models
+  web:
+    <<: *ci-service
+    ports: !reset []
+    volumes: !override
+      - ci-data:/app/data:ro
+  postgres:
+    <<: *ci-service
+  redis:
+    <<: *ci-service
+  graph:
+    <<: *ci-service
+  vector:
+    <<: *ci-service
+  minio:
+    <<: *ci-service
+
+networks:
+  app-network:
+    internal: true
+    labels: *ci-labels
+
+volumes:
+  ci-data:
+    labels: *ci-labels
+  ci-saves:
+    labels: *ci-labels
+  ci-models:
+    labels: *ci-labels
+  postgres-data:
+    labels: *ci-labels
+  memgraph-data:
+    labels: *ci-labels
+  qdrant-data:
+    labels: *ci-labels
+  redis-data:
+    labels: *ci-labels
+  minio-data:
+    labels: *ci-labels
