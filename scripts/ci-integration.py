@@ -412,10 +412,11 @@ def main() -> int:
             )
         finally:
             if instance and instance.claimed:
-                try:
-                    report["containers"] = instance.metadata()
-                except (IntegrationError, ValueError):
-                    report["diagnostics"] = "Safe container metadata unavailable"
+                if failure:
+                    try:
+                        report["failure_containers"] = instance.metadata()
+                    except (IntegrationError, ValueError):
+                        report["diagnostics"] = "Safe container metadata unavailable"
                 try:
                     instance.cleanup()
                     report["cleanup"] = "passed"

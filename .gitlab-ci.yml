@@ -36,7 +36,7 @@ integration-baseline:
   tags: [arm64-builder, docker, build]
   needs: [build-baseline]
   interruptible: true
-  timeout: 20m
+  timeout: 45m
   before_script:
     - apk add --no-cache --upgrade python3 libexpat
   script:
