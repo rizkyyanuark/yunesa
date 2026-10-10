@@ -26,7 +26,7 @@ def request(
     token: str = "",
     expected: tuple[int, ...] = (200,),
 ):
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "User-Agent": "Yunesa-Deployment-Readiness/1.0"}
     data = None
     if payload is not None:
         data = json.dumps(payload).encode()
