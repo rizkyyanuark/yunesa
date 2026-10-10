@@ -15,7 +15,7 @@ build-baseline:
   interruptible: true
   timeout: 2h
   before_script:
-    - apk add --no-cache bash python3
+    - apk add --no-cache --upgrade bash python3 libexpat
   script:
     - bash scripts/ci-build.sh
   artifacts:

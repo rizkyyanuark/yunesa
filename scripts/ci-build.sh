@@ -44,6 +44,8 @@ printf 'FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e9
 echo 'BuildKit registry push preflight passed'
 
 docker buildx build --platform linux/arm64 --file docker/api.Dockerfile \
+  --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/api-build-cache:main" \
+  --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/api-build-cache:main,mode=max,image-manifest=true,oci-mediatypes=true" \
   --tag "$CI_REGISTRY_IMAGE/api:$CI_COMMIT_SHA" --push --metadata-file artifacts/api-image.json .
 api_digest=$(python3 -c 'import json; print(json.load(open("artifacts/api-image.json"))["containerimage.digest"])')
 api_image="$CI_REGISTRY_IMAGE/api@$api_digest"
@@ -70,12 +72,17 @@ docker rm "$test_container" >/dev/null
 test_container=''
 
 docker buildx build --platform linux/arm64 --file docker/web.Dockerfile --target development \
+  --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/web-build-cache:main" \
   --tag "yunesa-web-check:$CI_JOB_ID" --load .
 docker run --rm --memory 1g --memory-swap 3g "yunesa-web-check:$CI_JOB_ID" pnpm exec eslint src
 docker buildx build --platform linux/arm64 --file docker/web.Dockerfile --target production \
+  --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/web-build-cache:main" \
+  --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/web-build-cache:main,mode=max,image-manifest=true,oci-mediatypes=true" \
   --tag "$CI_REGISTRY_IMAGE/web:$CI_COMMIT_SHA" --push --metadata-file artifacts/web-image.json .
 web_digest=$(python3 -c 'import json; print(json.load(open("artifacts/web-image.json"))["containerimage.digest"])')
 docker buildx build --platform linux/arm64 --file docker/minio.Dockerfile \
+  --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/minio-build-cache:main" \
+  --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/minio-build-cache:main,mode=max,image-manifest=true,oci-mediatypes=true" \
   --tag "$CI_REGISTRY_IMAGE/minio:$CI_COMMIT_SHA" --push --metadata-file artifacts/minio-image.json .
 minio_digest=$(python3 -c 'import json; print(json.load(open("artifacts/minio-image.json"))["containerimage.digest"])')
 printf 'YUNESA_API_IMAGE=%s\nYUNESA_WEB_IMAGE=%s\nYUNESA_MINIO_IMAGE=%s\n' \
