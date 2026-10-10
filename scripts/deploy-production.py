@@ -204,11 +204,11 @@ def backup(release: Path) -> Path:
         "-d",
         "postgres",
         "-tAc",
-        "SELECT count(*) FROM agent_runs WHERE status IN ('queued','running')",
+        "SELECT count(*) FROM agent_runs WHERE status NOT IN ('completed','failed','cancelled','interrupted')",
         label="Check active runs",
     ).strip()
     if active != b"0":
-        raise DeployError("Queued/running application work must finish before backup/cutover")
+        raise DeployError("Nonterminal application work must finish before backup/cutover")
     directory = ROOT / "backups" / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     directory.mkdir(mode=0o700, parents=True)
     compose(release, "stop", "web", "api", "worker", label="Quiesce application writers")
