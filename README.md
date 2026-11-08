@@ -84,7 +84,9 @@ pnpm build
 
 ## Produksi
 
-Deployment di [yunesa.tugasakhir.space](https://yunesa.tugasakhir.space) memakai project Compose `yunesa-app`: web/API, worker Arq, PostgreSQL, Redis, Memgraph, Qdrant, dan MinIO. Server tetap t4g.small 2 GB; ETL/Airflow mati. State baru berada di `/opt/yunesa-app/shared`, terpisah dari volume legacy; secret berasal dari GitLab Variables scope `production`.
+Baseline deployment di [yunesa.tugasakhir.space](https://yunesa.tugasakhir.space) memakai project Compose `yunesa-app`: web/API, worker Arq, PostgreSQL, Redis, Memgraph, Qdrant, dan MinIO. Acceptance DEP-001 memakai server t4g.small 2 GB dengan ETL/Airflow mati. State berada di `/opt/yunesa-app/shared`, terpisah dari volume legacy; secret berasal dari GitLab Variables scope `production`.
+
+Integrasi Airflow menambahkan profile opsional `etl` pada Compose produksi, dengan kontrol SSH `on`, `off`, `status`, dan `logs`. Kode integrasi ini belum di-deploy ke produksi. Migrasi pemasangan terpisah, bootstrap terpercaya, dan pengukuran kapasitas harus mengikuti [panduan operasi Airflow](docs/operations/airflow.md); jangan memakai `compose down` sebagai saklar pada project gabungan.
 
 Gate nyata membuktikan HTTPS, login/API auth, percakapan tersimpan, chat melalui worker, storage, serta Gemini dan SiliconFlow. Rollback antara dua release dengan source/digest sama dan restore PostgreSQL dari backup nyata juga lulus. Ini tidak menyelesaikan ING-001/KG-001/ANS-001: jalur pembangunan indeks yang masih bergantung pada Milvus/Neo4j tetap perlu pekerjaan tersendiri. Bukti backup, rollback, dan restore beserta batasnya dicatat di panduan deployment; kapasitas beban berkelanjutan dan pemulihan seluruh storage belum dibuktikan.
 

@@ -33,6 +33,8 @@ KG_DAG_COMMANDS = [
     "kg_extract_entities",
     "kg_build_graph",
     "kg_write_stores",
+    "kg_write_neo4j",
+    "kg_write_milvus",
 ]
 
 
@@ -88,6 +90,8 @@ def test_kg_service_functions_importable():
         run_kg_build,
         run_kg_data_load,
         run_kg_entity_extraction,
+        run_kg_write_milvus,
+        run_kg_write_neo4j,
         run_kg_write_stores,
     )
 
@@ -95,6 +99,19 @@ def test_kg_service_functions_importable():
     assert callable(run_kg_entity_extraction)
     assert callable(run_kg_build)
     assert callable(run_kg_write_stores)
+    assert callable(run_kg_write_neo4j)
+    assert callable(run_kg_write_milvus)
+
+
+def test_kg_pipeline_symbols_are_public():
+    from yunesa import knowledge
+
+    for name in (
+        'IeeeSemanticIndex', 'AcademicConceptResolver', 'graph_to_frames',
+        'serialisable_graph_copy', 'graph_quality_report', 'entity_resolution_report',
+        'summarize_extracted_elements',
+    ):
+        assert callable(getattr(knowledge, name)), f'KG worker API export unavailable: {name}'
 
 def test_scholar_scraping_requires_brightdata_proxy(monkeypatch):
     import yunesa.etl.services.unesa_papers as service
@@ -754,3 +771,59 @@ def test_config_module_loads():
     assert SAVE_DIR is not None
     assert SUPABASE_URL is not None
     assert SUPABASE_KEY is not None
+
+
+def test_rendered_dag_commands_dispatch_through_worker_cli():
+    import shlex
+    from yunesa.etl.run_worker import TASK_REGISTRY, _build_parser
+
+    parser = _build_parser()
+    for mode in ("incremental", "sample", "full"):
+        for cmd in LECTURERS_DAG_COMMANDS + PAPERS_DAG_COMMANDS + KG_DAG_COMMANDS:
+            rendered = f"{cmd} --mode {mode}" + (" --sample-size 25" if mode == "sample" else "")
+            args = parser.parse_args(shlex.split(rendered))
+            assert args.task == cmd
+            assert args.task in TASK_REGISTRY
+            assert callable(TASK_REGISTRY[args.task])
+            assert args.mode == mode
+            if mode == "sample":
+                assert args.sample_size == 25
+
+
+def test_worker_env_excludes_unrelated_and_admin_credentials(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    candidates = [
+        Path(__file__).resolve().parents[5] / "orchestration" / "dags" / "etl_common.py",
+        Path("/opt/airflow/dags/etl_common.py"),
+    ]
+    etl_common_path = next((p for p in candidates if p.is_file()), None)
+    assert etl_common_path is not None, 'ETL DAG configuration is required for credential-boundary verification'
+    spec = importlib.util.spec_from_file_location("etl_common_test", etl_common_path)
+    etl_common = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(etl_common)
+
+    forbidden = {
+        "AWS_SECRET_ACCESS_KEY": "aws-secret",
+        "AIRFLOW_VAR_AWS_SECRET_ACCESS_KEY": "aws-var-secret",
+        "TELEGRAM_BOT_TOKEN": "tg-secret",
+        "AIRFLOW_ADMIN_PASSWORD": "airflow-admin-secret",
+        "AIRFLOW_DB_PASSWORD": "airflow-db-secret",
+        "AIRFLOW_FERNET_KEY": "airflow-fernet-secret",
+        "AIRFLOW_API_SECRET": "airflow-api-secret",
+        "AIRFLOW_JWT_SECRET": "airflow-jwt-secret",
+        "JWT_SECRET_KEY": "app-jwt-secret",
+        "ADMIN_PASSWORD": "app-admin-secret",
+    }
+    for key, val in forbidden.items():
+        monkeypatch.setenv(key, val)
+    monkeypatch.setenv("AIRFLOW_VAR_SERPAPI_KEY_SECRET", "serp-test-value")
+
+    env = etl_common.worker_env()
+    assert env.get("SERPAPI_KEY") == "serp-test-value"
+    for key, val in forbidden.items():
+        clean = key.removeprefix("AIRFLOW_VAR_")
+        assert clean not in env, f"Forbidden variable {clean} leaked into worker_env"
+        assert val not in env.values(), f"Forbidden secret value for {key} leaked into worker_env"

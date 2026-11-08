@@ -83,7 +83,10 @@ HOST_PACKAGE_DIR = _host_path(
     _clean_env("HOST_PACKAGE_DIR", _default_package_dir(HOST_DATA_DIR))
 )
 
-DATA_MOUNT = Mount(source=HOST_DATA_DIR, target="/app/data", type="bind")
+DATA_MOUNT = Mount(
+    source=_clean_env('ETL_DATA_VOLUME', HOST_DATA_DIR), target='/app/data',
+    type='volume' if _clean_env('ETL_DATA_VOLUME') else 'bind',
+)
 
 
 def worker_mounts() -> list[Mount]:
@@ -110,19 +113,20 @@ def worker_command(task_name: str) -> str:
 
 DYNAMIC_ENV_PREFIXES = (
     "SUPABASE_",
+    "POSTGRES_",
     "NEO4J_",
     "MILVUS_",
+    "QDRANT_",
     "YUNESA_",
     "ETL_",
+    "GEMINI_",
     "SILICONFLOW_",
     "BD_",
     "SCIVAL_",
     "SERPAPI_",
     "GROQ_",
     "HF_",
-    "AWS_",
     "OPENROUTER_",
-    "TELEGRAM_",
     "SEMANTIC_SCHOLAR_",
     "S2_",
     "OPIK_",
@@ -141,8 +145,8 @@ EXPLICIT_ENV_KEYS = (
 
 def worker_env() -> dict[str, str]:
     """Dynamically scan and build environment dictionary for etl-worker containers."""
+    global_password = _clean_env("GLOBAL_PASSWORD")
     env_dict: dict[str, str] = {
-        # Core container environment settings
         "DOCKER_ENVIRONMENT": "true",
         "DATA_SOURCE_PATH": "/app/data",
         "PYTHONPATH": "/app/package",
@@ -157,9 +161,18 @@ def worker_env() -> dict[str, str]:
             "YUNESA_EMBEDDING_CACHE_PATH",
             "/app/data/kg/cache/embeddings.sqlite3",
         ),
+        "POSTGRES_HOST": _clean_env("POSTGRES_HOST", "postgres"),
+        "POSTGRES_PORT": _clean_env("POSTGRES_PORT", "5432"),
+        "POSTGRES_DB": _clean_env("POSTGRES_DB", "postgres"),
+        "POSTGRES_USER": _clean_env("POSTGRES_USER", "postgres"),
+        "POSTGRES_PASSWORD": _clean_env("POSTGRES_PASSWORD", global_password),
+        "NEO4J_URI": _clean_env("NEO4J_URI", "bolt://graph:7687"),
+        "NEO4J_PASSWORD": _clean_env("NEO4J_PASSWORD", global_password),
+        "QDRANT_URI": _clean_env("QDRANT_URI", "http://vector:6333"),
+        "QDRANT_API_KEY": _clean_env("QDRANT_API_KEY", global_password),
+        "YUNESA_VECTOR_BACKEND": _clean_env("YUNESA_VECTOR_BACKEND", "qdrant"),
     }
 
-    # 1. Dynamic Prefix Auto-Scanner (Auto-discovers any current & future env vars)
     for raw_key in os.environ:
         clean_key = raw_key
         if raw_key.startswith("AIRFLOW_VAR_"):
@@ -173,7 +186,6 @@ def worker_env() -> dict[str, str]:
                 if val:
                     env_dict[clean_key] = val
 
-    # 2. Aliases fallback resolution
     if "SUPABASE_SERVICE_ROLE_KEY" not in env_dict:
         svc_key = _clean_env("SUPABASE_SERVICE_ROLE_KEY", _clean_env("SUPABASE_SERVICE_KEY"))
         if svc_key:

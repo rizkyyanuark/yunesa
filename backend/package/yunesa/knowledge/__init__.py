@@ -1,4 +1,5 @@
 import os
+from importlib import import_module
 from yunesa import config as global_config
 from .factory import KnowledgeBaseFactory
 from .manager import KnowledgeBaseManager
@@ -10,17 +11,17 @@ if not _LITE_MODE:
     from .graphs.core_graph_service import CoreGraphService
     from .implementations.milvus import MilvusKB, AcademicKGVectorStore
 
-    # Register knowledge base types
     KnowledgeBaseFactory.register(
         "milvus", MilvusKB, {
-            "description": "Production-grade vector knowledge base based on Milvus for UNESA Academic Knowledge Graph deployment"}
+            "description": (
+                "Production-grade vector knowledge base based on Milvus "
+                "for UNESA Academic Knowledge Graph deployment"
+            )}
     )
 
-# Create knowledge base manager
 work_dir = os.path.join(global_config.save_dir, "knowledge_base_data")
 knowledge_base = KnowledgeBaseManager(work_dir)
 
-# Create graph database instance
 if _LITE_MODE or _SKIP_APP_INIT:
     from ..utils import logger
 
@@ -58,12 +59,6 @@ else:
     graph_base = _LazyGraphBaseProxy()
     GraphDatabase = CoreGraphService
 
-from .graphs.builder import AcademicKGBuilder
-from .config import KGConfig, AcademicExtractionConfig, MilvusVectorIndexConfig
-from .services.kg_service import run_kg_build
-from .graphs.storage_neo4j import write_graph_to_neo4j
-from .implementations.milvus import write_vector_index_to_milvus, AcademicKGVectorStore
-
 __all__ = [
     "GraphDatabase",
     "knowledge_base",
@@ -77,3 +72,36 @@ __all__ = [
     "write_graph_to_neo4j",
     "write_vector_index_to_milvus",
 ]
+
+_PIPELINE_EXPORTS = {
+    'AcademicKGBuilder': 'graphs.builder',
+    'AcademicKGVectorStore': 'implementations.milvus',
+    'KGConfig': 'config',
+    'AcademicExtractionConfig': 'config',
+    'MilvusVectorIndexConfig': 'config',
+    'run_kg_build': 'services.kg_service',
+    'write_graph_to_neo4j': 'graphs.storage_neo4j',
+    'write_vector_index_to_milvus': 'implementations.milvus',
+    'IeeeSemanticIndex': 'utils.ieee_semantic',
+    'AcademicConceptResolver': 'utils.concept_resolver',
+    'graph_to_frames': 'graphs.builder',
+    'serialisable_graph_copy': 'graphs.builder',
+    'graph_quality_report': 'eval.quality_gates',
+    'entity_resolution_report': 'eval.entity_resolution',
+    'write_llm_alias_suggestions': 'eval.entity_resolution',
+    'summarize_extracted_elements': 'parser.ner_extraction',
+    'extract_academic_elements_with_gliner_glirel': 'parser.ner_extraction',
+    'DEFAULT_GLINER_MODEL': 'constants',
+    'DEFAULT_GLIREL_MODEL': 'constants',
+    'LLMAliasSuggestionConfig': 'config',
+}
+__all__ += list(_PIPELINE_EXPORTS)
+
+
+def __getattr__(name: str):
+    module = _PIPELINE_EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+    value = getattr(import_module(f'{__name__}.{module}'), name)
+    globals()[name] = value
+    return value

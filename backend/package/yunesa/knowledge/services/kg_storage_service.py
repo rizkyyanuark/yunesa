@@ -68,7 +68,7 @@ def _update_storage_summary(*, mode: str, graph_name: str, section: str, payload
 
 
 def run_kg_write_neo4j(*, mode: str = "incremental", sample_size: int = 50) -> dict[str, Any]:
-    """Write only AuraDB/Neo4j and persist an auditable stage status."""
+    """Write the selected Bolt graph backend and persist its stage status."""
     mode = core._normal_mode(mode)
     kg, graph, graph_name = _load_quality_checked_graph(
         mode=mode,

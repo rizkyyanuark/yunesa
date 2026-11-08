@@ -7,7 +7,7 @@ etl-worker image through DockerOperator on the same Compose network.
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.providers.docker.operators.docker import DockerOperator
+from etl_operator import ManagedDockerOperator
 from etl_common import (
     DOCKER_NETWORK,
     ETL_RUN_MODE,
@@ -64,7 +64,7 @@ This runs extract, transform, enrich, and load for a bounded 100-paper sample.
 
 
 def create_operator(task_id: str, command_suffix: str):
-    return DockerOperator(
+    return ManagedDockerOperator(
         task_id=task_id,
         image=ETL_WORKER_IMAGE,
         command=command_suffix,

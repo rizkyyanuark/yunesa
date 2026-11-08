@@ -26,15 +26,13 @@ Maintenance Guide:
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.providers.docker.operators.docker import DockerOperator
+from etl_operator import ManagedDockerOperator
 from etl_common import DOCKER_NETWORK, ETL_WORKER_IMAGE, worker_env, worker_mounts
 
-# --- Constants --------------------------------------------------
 
 RUN_MODE_TEMPLATE = "{{ dag_run.conf.get('mode', 'incremental') if dag_run else 'incremental' }}"
 
 
-# --- DAG Configuration ------------------------------------------
 
 default_args = {
     "owner": "yunesa",
@@ -57,16 +55,8 @@ dag = DAG(
 )
 
 
-# --- Task Definitions -------------------------------------------
-# Uses DockerOperator to run the etl-worker container on the host's Docker daemon
-# via the mounted /var/run/docker.sock. Prerequisites:
-#   1. Docker SDK available in the Airflow image
-#   2. Scheduler container running as root (user: "0:0")
-#   3. /var/run/docker.sock mounted as volume
-
-# --- Task Definitions -------------------------------------------
 def create_operator(task_id: str, command_suffix: str):
-    return DockerOperator(
+    return ManagedDockerOperator(
         task_id=task_id,
         image=ETL_WORKER_IMAGE,
         command=command_suffix,

@@ -70,9 +70,10 @@ test_container=$(docker create --memory 1g --memory-swap 3g \
   --env GEMINI_API_KEY=unit-test-provider-placeholder \
   --env SILICONFLOW_API_KEY=unit-test-provider-placeholder --env OPIK_ENABLED=false \
   --entrypoint sh "$api_image" -c \
-  'uv run --frozen --group test --group dev pytest test/unit/test_package_import.py test/unit/test_auth_utils.py test/unit/storage/test_conversation_repository.py test/unit/knowledge/test_qdrant_storage.py --junitxml=/tmp/baseline-unit.xml && uv run --frozen --group dev ruff check /checks')
+  'uv run --frozen --group test --group dev pytest test/unit/test_package_import.py test/unit/test_auth_utils.py test/unit/storage/test_conversation_repository.py test/unit/knowledge/test_qdrant_storage.py package/yunesa/etl/tests/test_etl_dispatch.py --junitxml=/tmp/baseline-unit.xml && uv run --frozen --group dev ruff check /checks /orchestration')
 docker cp backend/test "$test_container:/app/test"
 docker cp scripts "$test_container:/checks"
+docker cp orchestration "$test_container:/orchestration"
 docker start --attach "$test_container"
 test_status=$(docker inspect "$test_container" --format '{{.State.ExitCode}}')
 [[ "$test_status" == '0' ]] || { echo "Baseline image checks failed (exit $test_status)" >&2; exit 1; }
@@ -107,3 +108,17 @@ minio_digest=$(python3 -c 'import json; print(json.load(open("artifacts/minio-im
 printf 'YUNESA_API_IMAGE=%s\nYUNESA_WEB_IMAGE=%s\nYUNESA_MINIO_IMAGE=%s\n' \
   "$api_image" "$CI_REGISTRY_IMAGE/web@$web_digest" "$CI_REGISTRY_IMAGE/minio@$minio_digest" > artifacts/images.env
 echo 'ARM64 API/web/MinIO images built; baseline unit tests, helper lint and frontend lint completed'
+
+for kind in airflow etl-worker; do
+  build_arguments=()
+  if [[ "$kind" == 'etl-worker' ]]; then
+    build_arguments+=(--build-arg ETL_INSTALL_TEST_DEPS=false --build-arg ETL_INSTALL_KG_DEPS=true)
+  fi
+  docker buildx build --platform linux/arm64 --file "docker/$kind.Dockerfile" \
+    "${build_arguments[@]}" --tag "$CI_REGISTRY_IMAGE/$kind:$CI_COMMIT_SHA" \
+    --push --metadata-file "artifacts/$kind-image.json" .
+  image_digest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "artifacts/$kind-image.json")
+  variable_name="YUNESA_${kind^^}_IMAGE"
+  variable_name="${variable_name//-/_}"
+  printf '%s=%s/%s@%s\n' "$variable_name" "$CI_REGISTRY_IMAGE" "$kind" "$image_digest" >> artifacts/images.env
+done

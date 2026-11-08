@@ -1,5 +1,23 @@
 # Deployment baseline Yunesa
 
+## Integrasi Airflow yang belum diaktifkan
+
+Change `integrate-airflow-etl-profile` menambahkan service Airflow dalam profile `etl` pada Compose produksi. Implementasi dan smoke terisolasi tidak mengubah hasil historis DEP-001 dan bukan bukti cutover produksi. Panduan: [operasi Airflow](operations/airflow.md).
+
+Build menyiapkan image ARM64 `airflow` dan `etl-worker` dari revisi release; request produksi harus membawa `YUNESA_AIRFLOW_IMAGE` dan `YUNESA_ETL_WORKER_IMAGE` berupa digest dari registry project. Bootstrap root-owned, request, dan wrapper harus diperbarui bersama agar checksum konfigurasi tetap cocok. Menjalankan `on` tidak membangun atau mempublish image.
+
+`artifacts/airflow-image.json` dan `artifacts/etl-worker-image.json` menyimpan digest BuildKit. `artifacts/images.env` meneruskan kedua referensi immutable ke integrasi dan request deployment. Job build memakai resource group `yunesa-build-host`; pipeline MR hanya menjalankan verifikasi dengan placeholder provider. Build ARM64 lokal dan pengujian registry worker telah dijalankan pada 7 November 2026. Publikasi registry dan deployment CI perubahan ini masih memerlukan bukti tersendiri. Identitas lokal dan batas verifikasinya dicatat dalam [bukti integrasi Airflow](evidence/airflow-etl-profile-2026-11-07.md).
+
+Perbarui bootstrap melalui installer yang telah ditinjau beserta checksum input sumbernya. Review perubahan DAG/operator, helper lifecycle, wrapper deploy, Compose dan unit rekonsiliasi sebagai satu set sebelum instalasi administratif. Source aplikasi dan DAG tertanam dalam image; produksi tidak memasang checkout host ke worker.
+
+Tambahkan secret Airflow melalui variable protected/masked scope produksi sesuai panduan operasi. Pertahankan password metadata, Fernet key, dan signing keys saat migrasi; perubahan credential pada release yang sudah menggunakannya ditolak dan membutuhkan prosedur rotasi terpisah. Core API/worker menerima environment aplikasi secara eksplisit dan tidak menerima secret admin Airflow dari seluruh file `.env`.
+
+Installer menyediakan unit `yunesa-airflow-reconcile.service` untuk rekonsiliasi setelah boot, tanpa langsung menyalakan layanan ketika bootstrap dijalankan. Bootstrap dan cutover tetap memerlukan jendela produksi yang diotorisasi. Jangan menjalankan dua scheduler pada database metadata yang sama selama migrasi.
+
+Saat bootstrap adopsi pertama, pilih volume hasil inventaris dengan `--airflow-log-volume <nama-volume>`. Nama disimpan dalam `config/registry.json` milik root dan diteruskan ke environment serta manifest setiap release. Refresh installer tanpa flag mempertahankannya. Perubahan mapping yang sudah ditetapkan ditolak sampai dilakukan migrasi offline yang ditinjau. Request CI tidak dapat mengganti nama volume. Untuk instalasi lama, periksa mapping aktual sebelum menjalankan bootstrap.
+
+Job `integration-airflow` menjalankan DAG KG dari digest Airflow/ETL-worker pada PostgreSQL dan Memgraph lokal terisolasi, memeriksa hasil tersimpan, readiness, kegagalan komponen dan OFF. Artifact `artifacts/integration-airflow.json` mencatat hasil dan cleanup. Deployment otomatis protected `main` menunggu gate core serta Airflow. Bukti lokal AMD64 dan batas verifikasi release berikutnya dicatat pada [rehearsal log dan gate CI](evidence/airflow-log-ci-2026-11-09.md).
+
 Pembaruan CI: 11 Oktober 2026 (Asia/Jakarta). Baseline produksi diverifikasi pada 10 Oktober 2026. Pipeline 36 pada commit `a8052647081a8af87d211fe14414cdcbb1d9f387` telah lulus build 132, integrasi ARM 133, dan deploy 134 pada 13:29:52. Gate produksi membuktikan HTTPS, auth/persistensi, chat melalui worker, storage, dan kedua provider. Redeploy 136 membuat backup; rollback 135 dan restore PostgreSQL terisolasi passed dengan canary tersimpan. Kontrak perubahan: [DEP-001](../openspec/changes/dep-001-initial-deployment/proposal.md); command, identitas release, serta batas bukti: [bukti DEP-001](evidence/dep-001-2026-10-10.md).
 
 ## Keputusan yang berlaku
@@ -80,7 +98,7 @@ Build frontend memakai batas heap Node 2048 MiB seperti Dockerfile produksi, den
 
 Job pemeriksaan, build, dan integrasi memakai resource group `yunesa-build-host` agar pekerjaan Yunesa tersebut tidak berjalan bersamaan. Host juga menjalankan layanan personal-agentic; resource group tidak mengisolasi beban project lain. GitLab wajib menolak merge ketika pipeline belum berhasil, termasuk pipeline skipped. Tinjau hasil kedua job pada commit terbaru bersama bukti QA sebelum menggabungkan MR.
 
-Hanya push atau merge ke protected `main` yang menjalankan `build-baseline`, `integration-baseline`, dan `deploy-production`. Build membuat API/web/MinIO ARM64 pada runner ID 1 serta menjalankan tes backend dan lint. Integrasi memakai digest hasil build pada stack terisolasi. Deployment produksi tetap otomatis setelah build dan integrasi lulus, dengan resource group `yunesa-production`; tidak ada langkah deploy manual tambahan. Rollback merupakan job manual dan memerlukan dua release yang telah lolos gate. Runner deployment dibuka kembali setelah gate 129 berhasil.
+Hanya push atau merge ke protected `main` yang menjalankan `build-baseline`, `integration-baseline`, `integration-airflow`, dan `deploy-production`. Build membuat API/web/MinIO/Airflow/ETL-worker ARM64 pada runner ID 1 serta menjalankan tes backend dan lint. Kedua integrasi memakai digest hasil build pada stack terisolasi. Deployment produksi tetap otomatis setelah build dan kedua gate integrasi lulus, dengan resource group `yunesa-production`. Rollback merupakan job manual dan memerlukan dua release yang telah lolos gate. Runner deployment dibuka kembali setelah gate 129 berhasil.
 
 [Override Compose CI](../docker-compose.ci.yml) memakai delapan layanan nyata: PostgreSQL, Redis, Memgraph, Qdrant, MinIO, API, worker, dan web. Nama project mengandung job ID dan nonce; semua volume memakai namespace baru, tanpa bind mount host atau port publik. Jaringan internal menghalangi akses provider eksternal. Job menolak variable secret aplikasi produksi dan memakai password/admin sintetis; placeholder provider hanya memenuhi konfigurasi startup, tanpa pemanggilan Gemini/SiliconFlow atau chat berbayar.
 
@@ -104,7 +122,7 @@ Periksa Compose tanpa mencetak konfigurasi hasil interpolasi yang memuat secret.
 
 Bukti produksi mencakup query PostgreSQL, Redis write/read, Memgraph `RETURN 1`, Qdrant collections=0, dan round trip MinIO. Login/me, 401 tanpa token, thread CRUD, serta chat async lewat worker dengan respons assistant tersimpan passed melalui jalur lokal dan HTTPS publik. Browser menampilkan landing/login; login interaktif UI dan penerimaan Terms belum dilakukan. Gemini `gemini-flash-latest` dan SiliconFlow `Qwen/Qwen3-Embedding-0.6B` tersedia pada pemanggilan nyata; key tidak dicatat.
 
-[Endpoint health](../backend/server/routers/system_router.py) saat ini hanya mengembalikan status handler. Health container atau HTTP 200 belum membuktikan dependency, persistensi, provider, atau hasil akademik. [KG service](../backend/package/yunesa/knowledge/services/kg_service.py) dan [KG storage](../backend/package/yunesa/knowledge/services/kg_storage_service.py) masih menulis indeks lewat Milvus; [graph writer](../backend/package/yunesa/knowledge/graphs/storage_neo4j.py) memakai sintaks Neo4j. Gap tersebut tetap terbuka sampai operasi terkait berhasil pada Memgraph/Qdrant.
+[Endpoint health](../backend/server/routers/system_router.py) saat ini hanya mengembalikan status handler. Health container atau HTTP 200 belum membuktikan dependency, persistensi, provider, atau hasil akademik. [KG service](../backend/package/yunesa/knowledge/services/kg_service.py) dan [KG storage](../backend/package/yunesa/knowledge/services/kg_storage_service.py) masih menulis indeks lewat Milvus. Adapter graph kini mendukung Memgraph secara eksplisit dan telah melewati managed-DAG persistence terisolasi. Jalur vector Qdrant dan penerimaan KG-001 lengkap masih memerlukan verifikasi tersendiri.
 
 Jalankan tes integration yang memutasi data pada stack CI terisolasi, bukan volume produksi. Fixture [integration](../backend/test/integration/conftest.py) memerlukan akun admin dan memiliki cleanup KB. Credentials yang tidak tersedia menghasilkan skip; skip belum memenuhi acceptance wajib.
 

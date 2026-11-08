@@ -68,6 +68,7 @@ verify-backend:
       test/unit/test_package_import.py test/unit/test_auth_utils.py
       test/unit/storage/test_conversation_repository.py
       test/unit/knowledge/test_qdrant_storage.py
+      package/yunesa/etl/tests/test_etl_dispatch.py
       --junitxml=../artifacts/mr-unit.xml
     - |
       python - <<'PY'
@@ -79,7 +80,7 @@ verify-backend:
           raise SystemExit('Required merge request tests were skipped')
       print('Required merge request tests completed without skips')
       PY
-    - uv run --frozen --group dev ruff check ../scripts
+    - uv run --frozen --group dev ruff check ../scripts ../orchestration
   artifacts:
     when: always
     paths:
@@ -109,6 +110,8 @@ build-baseline:
       - artifacts/api-image.json
       - artifacts/web-image.json
       - artifacts/minio-image.json
+      - artifacts/airflow-image.json
+      - artifacts/etl-worker-image.json
       - artifacts/baseline-unit.xml
     reports:
       junit: artifacts/baseline-unit.xml
@@ -134,11 +137,30 @@ integration-baseline:
       - artifacts/integration-baseline.json
     expire_in: 30 days
 
+integration-airflow:
+  extends: .protected-main-job
+  stage: integration
+  image: docker:26-cli
+  tags: [arm64-builder, docker, build]
+  resource_group: yunesa-build-host
+  needs: [build-baseline]
+  interruptible: false
+  timeout: 45m
+  before_script:
+    - apk add --no-cache --upgrade python3 libexpat
+  script:
+    - python3 scripts/ci-airflow-integration.py
+  artifacts:
+    when: always
+    paths:
+      - artifacts/integration-airflow.json
+    expire_in: 30 days
+
 deploy-production:
   extends: .protected-main-job
   stage: deploy
   tags: [yunesa-prod, deploy]
-  needs: [build-baseline, integration-baseline]
+  needs: [build-baseline, integration-baseline, integration-airflow]
   resource_group: yunesa-production
   interruptible: false
   timeout: 30m

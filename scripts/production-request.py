@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+from airflow_operations import AIRFLOW_SECRETS, configuration_digest
 
 
 def main() -> int:
@@ -20,12 +21,15 @@ def main() -> int:
             "YUNESA_API_IMAGE",
             "YUNESA_WEB_IMAGE",
             "YUNESA_MINIO_IMAGE",
+            "YUNESA_AIRFLOW_IMAGE",
+            "YUNESA_ETL_WORKER_IMAGE",
             "GLOBAL_PASSWORD",
             "JWT_SECRET_KEY",
             "GEMINI_API_KEY",
             "SILICONFLOW_API_KEY",
             "ADMIN_PASSWORD",
         )
+        required += AIRFLOW_SECRETS
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         print("Missing deployment variables: " + ", ".join(missing), file=sys.stderr)
@@ -33,10 +37,7 @@ def main() -> int:
     payload = {name: os.environ[name] for name in required}
     if args.operation == "deploy":
         root = Path(__file__).resolve().parents[1]
-        digest = hashlib.sha256()
-        for name in ("docker-compose.prod.yml", "scripts/deployment-readiness.py"):
-            digest.update(name.encode() + b"\0" + (root / name).read_bytes() + b"\0")
-        payload["YUNESA_CONFIG_SHA256"] = digest.hexdigest()
+        payload["YUNESA_CONFIG_SHA256"] = configuration_digest(root)
     for name in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"):
         if os.environ.get(name):
             payload[name] = os.environ[name]

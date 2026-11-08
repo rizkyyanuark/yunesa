@@ -32,15 +32,16 @@ WORKDIR /app
 COPY backend/package /app/package
 COPY README.md /app/package/README.md
 ARG ETL_INSTALL_TEST_DEPS=true
-ARG ETL_INSTALL_KG_DEPS=false
+ARG ETL_INSTALL_KG_DEPS=true
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --project /app/package --frozen --no-dev && \
+    set -- --no-dev; \
     if [ "$ETL_INSTALL_TEST_DEPS" = "true" ]; then \
-        uv sync --project /app/package --frozen --group test; \
-    fi && \
+        set -- "$@" --group test; \
+    fi; \
     if [ "$ETL_INSTALL_KG_DEPS" = "true" ]; then \
-        uv sync --project /app/package --frozen --group kg; \
-    fi
+        set -- "$@" --group kg; \
+    fi; \
+    uv sync --project /app/package --frozen "$@"
 
 ENV PATH="/app/package/.venv/bin:$PATH" \
     PYTHONPATH="/app/package"
