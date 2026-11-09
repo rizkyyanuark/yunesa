@@ -19,7 +19,7 @@ Paket ini mencatat kebutuhan target dan kondisi kode yang diinspeksi. Spesifikas
 - `configs`: konfigurasi contoh tanpa data akun pribadi.
 - `docker`: Dockerfile dan konfigurasi layanan.
 - `orchestration/dags`: DAG ETL Airflow.
-- `scripts`: persiapan konfigurasi lokal dan utilitas.
+- `scripts`: setup lokal, CI/deployment dan operasi. Verifier berada di `scripts/checks/airflow`, rehearsal kapasitas di `scripts/rehearsal/arm64`. Lihat [panduan script](scripts/README.md).
 - `docs/database/supabase-schema.sql`: skema database Supabase.
 
 Folder `data`, `saves`, dan `models` disiapkan kosong untuk state lokal. Dataset, model unduhan, naskah penelitian, kredensial, dan dependensi terpasang tidak disertakan.
