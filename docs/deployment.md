@@ -1,5 +1,11 @@
 # Deployment baseline Yunesa
 
+## Kontrak request dan artifact release
+
+`verify-deployment` menjalankan kontrak lifecycle/config dan request deployment pada MR serta protected `main`. Kontrak Docker berjalan setelah gate integrasi Airflow. Request deploy memeriksa SHA terbaru default branch, lalu protokol helper, sebelum meneruskan permintaan ke wrapper.
+
+Versi request ini membutuhkan bootstrap yang mengenali probe stdin JSON `{"release_evidence_protocol":2}` pada command `deploy` yang sudah diizinkan sudoers. Respons mengumumkan anggaran operasi 1800 detik dan recovery 1200 detik. Client menunggu gabungan anggaran ditambah 120 detik; job CI memberi waktu 60 menit. Probe membaca konfigurasi tepercaya sebelum mengembalikan versi, tanpa memulai deployment. Refresh installer administratif yang ditinjau sebelum menggunakan deployment baru. Gate protokol menolak wrapper lama sebelum melakukan deployment. Job deploy dan rollback memvalidasi identitas release/readiness dan menyimpan `artifacts/production-release.json` serta `artifacts/production-health.json` selama 30 hari, termasuk saat gagal. Referensi diagnostik menunjuk jurnal privat root di `/opt/yunesa-app/diagnostics/`, dengan error yang disaring dan status recovery. Rincian terdapat di [panduan kontribusi](../CONTRIBUTING.md).
+
 ## Integrasi Airflow yang belum diaktifkan
 
 Change `integrate-airflow-etl-profile` menambahkan service Airflow dalam profile `etl` pada Compose produksi. Implementasi dan smoke terisolasi tidak mengubah hasil historis DEP-001 dan bukan bukti cutover produksi. Panduan: [operasi Airflow](operations/airflow.md).

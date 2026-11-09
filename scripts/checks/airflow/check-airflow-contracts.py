@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -93,21 +92,6 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(deployment.DeployError):
                 deployment.validate_request(self.payload, 'deploy', {**self.registry, 'architecture': value})
 
-    def test_real_image_architecture_guard(self):
-        image = 'yunesa-airflow-check:local'
-        inspected = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image]))[0]
-        actual = inspected['Architecture']
-        self.assertIn(actual, ('amd64', 'arm64'))
-        previous = deployment.ARCHITECTURE
-        try:
-            deployment.ARCHITECTURE = 'arm64' if actual == 'amd64' else 'amd64'
-            with self.assertRaises(deployment.DeployError):
-                deployment.image_platform(image)
-            deployment.ARCHITECTURE = actual
-            deployment.image_platform(image)
-        finally:
-            deployment.ARCHITECTURE = previous
-
     def test_mutable_and_foreign_images_rejected(self):
         for image in ('registry.test:443/owner/yunesa/etl-worker:latest',
                       'foreign.test/etl-worker@sha256:' + 'b' * 64):
@@ -157,26 +141,6 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.operation.state(), {'requested': 'off', 'phase': 'off'})
         with self.assertRaises(RuntimeError):
             require_open(self.operation.control, self.release.name)
-
-    def test_workers_disappearing_during_observation(self):
-        project = 'yunesa-airflow-observe-' + os.urandom(4).hex()
-        operation = AirflowOperations(self.root, project=project)
-        label = 'io.yunesa.etl.project=' + project
-        try:
-            for _ in range(3):
-                subprocess.run(['docker', 'run', '--rm', '-d', '--network', 'none', '--memory', '32m',
-                                '--memory-swap', '64m', '--label', label, 'yunesa-airflow-check:local',
-                                'python', '-c', 'import time; time.sleep(2)'],
-                               check=True, capture_output=True, timeout=30)
-            deadline = time.monotonic() + 30
-            while operation.workers(include_exited=True) and time.monotonic() < deadline:
-                time.sleep(0.05)
-            self.assertEqual(operation.workers(include_exited=True), [])
-        finally:
-            remaining = subprocess.run(['docker', 'ps', '-aq', '--filter', 'label=' + label],
-                                       check=True, capture_output=True, text=True, timeout=30)
-            for identifier in remaining.stdout.split():
-                subprocess.run(['docker', 'rm', '-f', identifier], check=True, capture_output=True, timeout=30)
 
     def test_invalid_arguments(self):
         for arguments in (['unsupported'], ['off', '--deadline', '0'], ['off', '--deadline', '3601']):

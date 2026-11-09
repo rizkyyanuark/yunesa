@@ -30,6 +30,8 @@ Repository utama adalah [GitLab](https://gitlab.tugasakhir.space/rizkyyanuark/yu
 
 Kirim branch perubahan ke GitLab, lalu buka Merge Request ke `main`:
 
+Ikuti [panduan kontribusi](CONTRIBUTING.md) dan template MR untuk aturan branch, gate deployment, bukti release dan rollback.
+
 ```powershell
 git push origin HEAD
 ```
