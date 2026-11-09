@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from airflow_operations import AirflowOperations  # noqa: E402
-from yunesa_airflow.admission import atomic_json  # noqa: E402
+from yunesa_airflow.admission import atomic_json, require_open, set_gate  # noqa: E402
 
 spec = importlib.util.spec_from_file_location('deployment', Path(__file__).resolve().parents[2] / 'deploy-production.py')
 deployment = importlib.util.module_from_spec(spec)
@@ -38,6 +38,29 @@ class DockerContracts(unittest.TestCase):
             deployment.image_platform(self.image)
         finally:
             deployment.ARCHITECTURE = previous
+
+    def test_interrupted_reservation_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            release = root / 'releases/a'
+            release.mkdir(parents=True)
+            project = 'yunesa-airflow-reservation-' + os.urandom(4).hex()
+            atomic_json(release / 'manifest.json', {
+                'project': project, 'airflow_version': '3.1.7',
+                'airflow_image': 'airflow:fixture', 'etl_worker_image': 'worker:fixture'}, mode=0o600)
+            (release / '.env').write_text("YUNESA_AIRFLOW_IMAGE='airflow:fixture'\nYUNESA_ETL_WORKER_IMAGE='worker:fixture'\n")
+            (release / '.env').chmod(0o600)
+            operation = AirflowOperations(root, release)
+            operation.save({'requested': 'on', 'phase': 'starting'})
+            marker = operation.control / 'reservation-interrupted.json'
+            atomic_json(marker, {'release': release.name})
+            set_gate(operation.control, True, release.name)
+            with self.assertRaisesRegex(RuntimeError, 'Unresolved worker launch reservation'):
+                operation.on()
+            self.assertRegex(operation.state()['transition_id'], r'^[0-9a-f]{32}$')
+            self.assertTrue(marker.exists())
+            with self.assertRaises(RuntimeError):
+                require_open(operation.control, release.name)
 
     def test_workers_disappearing_during_observation(self):
         with tempfile.TemporaryDirectory() as directory:

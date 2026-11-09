@@ -186,17 +186,8 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             require_open(self.operation.control, self.release.name)
 
-    def test_interrupted_reservation_and_corrupt_state_fail_closed(self):
+    def test_corrupt_state_fail_closed(self):
         self.operation.save({'requested': 'on', 'phase': 'starting'})
-        marker = self.operation.control / 'reservation-interrupted.json'
-        atomic_json(marker, {'release': self.release.name})
-        set_gate(self.operation.control, True, self.release.name)
-        with self.assertRaisesRegex(RuntimeError, 'Unresolved worker launch reservation'):
-            self.operation.on()
-        self.assertRegex(self.operation.state()['transition_id'], r'^[0-9a-f]{32}$')
-        self.assertTrue(marker.exists())
-        with self.assertRaises(RuntimeError):
-            require_open(self.operation.control, self.release.name)
         for corrupted in ('{broken', '{"requested":"invalid","phase":"off"}'):
             self.operation.state_path.write_text(corrupted)
             set_gate(self.operation.control, True, self.release.name)
