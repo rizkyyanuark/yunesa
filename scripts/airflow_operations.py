@@ -432,14 +432,22 @@ SELECT 'CREATE DATABASE airflow OWNER airflow' WHERE NOT EXISTS (SELECT FROM pg_
             raise OperationError('Backup must stay inside the deployment backup directory')
         if self.state()['phase'] != 'off' or self.workers() or list(self.control.glob('reservation-*.json')):
             raise OperationError('Airflow must be fully drained before its backup')
-        if self.compose('ps', '--status', 'running', '--services', 'airflow-init').strip():
+        running = self.compose('ps', '--status', 'running', '--services').decode().split()
+        if 'airflow-init' in running:
             raise OperationError('Airflow initialization must finish before its backup')
         exists = self.compose('exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', 'postgres',
                               '-tAc', "SELECT count(*) FROM pg_database WHERE datname='airflow'").strip()
         if exists != b'1':
             return {'metadata_present': False}
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        volume = self.environment().get('YUNESA_AIRFLOW_LOG_VOLUME', self.project + '_airflow-logs')
+        volume = self.environment().get('YUNESA_AIRFLOW_LOG_VOLUME')
+        if not volume and (self.root / 'config/registry.json').is_file():
+            try:
+                volume = trusted_json(self.root / 'config/registry.json').get('airflow_log_volume')
+            except OperationError:
+                volume = None
+        if not volume:
+            volume = self.project + '_airflow-logs'
         labels = json.loads(run(['docker', 'volume', 'inspect', '--format', '{{json .Labels}}', volume])) or {}
         if labels.get('com.docker.compose.project') not in (self.project, 'yunesa-airflow'):
             raise OperationError('Airflow log volume ownership is not recognized')
