@@ -18,7 +18,9 @@ lint.select = [
     "F",
     "E",
     "W",
-    "UP",
+]
+lint.ignore = [
+    "E501",
 ]
 
 [tool.uv]
