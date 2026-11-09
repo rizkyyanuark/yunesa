@@ -145,8 +145,8 @@ Tahap rencana diikuti persiapan lokal. Controller, adaptor dan bundle didokument
 Bundle aktif berada di `.cache/airflow-native-preparation/bundle-v2/`. File `bundle.json` memetakan source yang belum di-commit, sembilan image, ukuran arsip dan checksum. `source.tar.gz` berisi helper dan orchestration yang diperlukan. `images.tar.gz` memakai Docker archive untuk platform `linux/arm64`.
 
 ```powershell
-python scripts/prepare-airflow-arm64-bundle.py verify --output .cache/airflow-native-preparation/bundle-v2
-python scripts/check-airflow-native-preparation.py
+python scripts/rehearsal/arm64/prepare-airflow-arm64-bundle.py verify --output .cache/airflow-native-preparation/bundle-v2
+python scripts/rehearsal/arm64/check-airflow-native-preparation.py
 ```
 
 Jika hanya helper lokal berubah, `refresh-source` memperbarui arsip source setelah memeriksa ulang arsip image serta source aplikasi tertanam. Perubahan source aplikasi memerlukan image yang cocok dan bundle baru.

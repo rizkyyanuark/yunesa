@@ -17,7 +17,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, '/source/scripts')
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from airflow_operations import AirflowOperations, RUNTIME_SERVICES  # noqa: E402
 from yunesa_airflow.admission import boot_id  # noqa: E402
 

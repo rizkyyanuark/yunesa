@@ -18,11 +18,12 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from airflow_operations import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from airflow_operations import (  # noqa: E402
     AIRFLOW_SECRETS, AirflowOperations, configuration_digest, deployment_architecture, require_open,
 )
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[3]
 ROOT = Path('/opt/yunesa-app')
 SERVICES = ('postgres', 'redis', 'graph', 'vector', 'minio', 'api', 'worker', 'web')
 

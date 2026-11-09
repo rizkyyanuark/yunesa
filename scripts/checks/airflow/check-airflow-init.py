@@ -11,9 +11,10 @@ import sys
 import threading
 from pathlib import Path
 
-from airflow_operations import OperationError
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from airflow_operations import OperationError  # noqa: E402
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[3]
 
 
 def load(name: str, filename: str):
@@ -24,7 +25,7 @@ def load(name: str, filename: str):
 
 
 local = load('init_local', 'airflow-local-check.py')
-kernel = load('init_kernel', 'check-airflow-kernel-guest.py')
+kernel = load('init_kernel', 'checks/airflow/check-airflow-kernel-guest.py')
 
 
 def main() -> None:

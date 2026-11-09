@@ -25,7 +25,7 @@ The server was running the legacy installation alongside eight healthy core cont
 
 ## Real local execution
 
-The entrypoint is `scripts/check-airflow-adoption.py`. It reuses the actual Compose configuration, `AirflowOperations`, existing fixture bootstrap and API request helpers. It uses a single legacy container with API server, DAG processor and LocalExecutor scheduler, PostgreSQL-owned metadata and a writable-layer configuration file. It then adopts the same metadata and log volume into the actual split-service lifecycle.
+The entrypoint is `scripts/checks/airflow/check-airflow-adoption.py`. It reuses the actual Compose configuration, `AirflowOperations`, existing fixture bootstrap and API request helpers. It uses a single legacy container with API server, DAG processor and LocalExecutor scheduler, PostgreSQL-owned metadata and a writable-layer configuration file. It then adopts the same metadata and log volume into the actual split-service lifecycle.
 
 The probe DAG runs a real BashOperator through the authenticated Airflow API and scheduler. Its output is `ADOPTION_REAL_TASK_LOG`. It supplies historical metadata/log evidence without provider calls. Connection password/extra and variable values are genuinely Fernet-encrypted through Airflow's models. The legacy Fernet/API/JWT material is generated independently from the initial integrated environment, then recovered from the backed-up configuration into that environment.
 
@@ -74,7 +74,7 @@ docker run -d --name "${project}-controller" `
   -v "${project}-control:/opt/yunesa-app/shared/airflow/control" `
   -v "${project}-logs:/legacy-logs" `
   -v /var/run/docker.sock:/var/run/docker.sock `
-  yunesa-airflow-check:local python /source/scripts/check-airflow-adoption.py --project $project
+  yunesa-airflow-check:local python /source/scripts/checks/airflow/check-airflow-adoption.py --project $project
 docker wait "${project}-controller"
 docker logs "${project}-controller"
 Get-Content (Join-Path $proof 'result.json')
@@ -92,8 +92,8 @@ The operations guide's legacy-adoption prerequisites apply. Refresh inventory an
 
 ## Final checks
 
-- `python -m py_compile scripts/check-airflow-adoption.py` passed.
-- `backend/.venv/Scripts/ruff.exe check scripts/check-airflow-adoption.py` passed.
+- `python -m py_compile scripts/checks/airflow/check-airflow-adoption.py` passed.
+- `backend/.venv/Scripts/ruff.exe check scripts/checks/airflow/check-airflow-adoption.py` passed.
 - `openspec validate integrate-airflow-etl-profile --strict` passed.
 - The accepted controller exited zero and its service containers were removed. Two unrelated Personal-agentic containers remained running and healthy.
 - HEAD remained `b6924e196f6728c73dd70864c20b1c655db9f50f` on `main`. Existing unrelated working-tree changes were preserved.

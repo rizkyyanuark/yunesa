@@ -61,7 +61,7 @@ The temporary registry, test drivers, fault images, session registry tags, fixtu
 
 - `.gitlab-ci.yml` and new `scripts/ci-airflow-integration.py`.
 - `scripts/airflow_operations.py`, `scripts/install-deployment-host.py` and `scripts/deploy-production.py`.
-- `scripts/airflow-local-check.py`, `scripts/check-airflow-core-release.py`, `scripts/check-airflow-contracts.py` and new `scripts/check-airflow-log-release.py`.
+- `scripts/airflow-local-check.py`, `scripts/checks/airflow/check-airflow-core-release.py`, `scripts/checks/airflow/check-airflow-contracts.py` and new `scripts/checks/airflow/check-airflow-log-release.py`.
 - `docs/operations/airflow.md`, `docs/deployment.md` and this evidence report.
 - `openspec/changes/integrate-airflow-etl-profile/design.md` and `tasks.md`.
 
@@ -70,8 +70,8 @@ Earlier implementation changes and unrelated dirty files were retained. In parti
 ## Commands
 
 ```sh
-python scripts/check-airflow-contracts.py
-python scripts/check-airflow-log-release.py --project <isolated-project> --registry 127.0.0.1:57566 --images /proof/images.json
+python scripts/checks/airflow/check-airflow-contracts.py
+python scripts/checks/airflow/check-airflow-log-release.py --project <isolated-project> --registry 127.0.0.1:57566 --images /proof/images.json
 python scripts/ci-airflow-integration.py --architecture amd64 --report /proof/ci-gate-positive-final.json
 python scripts/ci-airflow-integration.py --architecture amd64 --readiness-deadline 180 --report /proof/ci-gate-import-rejected.json
 uv run --project backend ruff check scripts orchestration

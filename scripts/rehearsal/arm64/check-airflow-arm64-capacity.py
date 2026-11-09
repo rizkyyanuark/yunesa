@@ -15,12 +15,14 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from airflow_operations import AirflowOperations
-from airflow_capacity_session import Session, instance_identity, native_hardware
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from airflow_operations import AirflowOperations  # noqa: E402
+from airflow_capacity_session import Session, instance_identity, native_hardware  # noqa: E402
 
 SOURCE = Path('/source')
 ROOT = Path('/opt/yunesa-app')
@@ -39,8 +41,8 @@ def module(name: str, path: Path):
     return loaded
 
 
-core = module('core_capacity', SOURCE / 'scripts/check-airflow-core-release.py')
-kernel = module('kernel_capacity', SOURCE / 'scripts/check-airflow-kernel-guest.py')
+core = module('core_capacity', SOURCE / 'scripts/checks/airflow/check-airflow-core-release.py')
+kernel = module('kernel_capacity', SOURCE / 'scripts/checks/airflow/check-airflow-kernel-guest.py')
 
 
 def engine_get(path: str) -> dict | list | None:

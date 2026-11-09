@@ -14,14 +14,16 @@ import secrets
 import shutil
 import signal
 import subprocess
+import sys
 import tarfile
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from airflow_operations import OperationError, RUNTIME_SERVICES
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from airflow_operations import OperationError, RUNTIME_SERVICES  # noqa: E402
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[3]
 ROOT = Path('/opt/yunesa-app')
 PROOF = Path('/proof')
 spec = importlib.util.spec_from_file_location('local_check', SOURCE / 'scripts/airflow-local-check.py')

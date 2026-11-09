@@ -13,7 +13,7 @@ from pathlib import Path
 
 from airflow_capacity_session import Session, capacity_result
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[3]
 PROOF = Path('/proof')
 
 
@@ -53,7 +53,7 @@ def native(lease_path: Path, bundle: Path, proof: Path) -> None:
             raise RuntimeError('Native SSH phase failed; inspect native-runner.log')
 
     session_value = {key: lease[key] for key in Session.__dataclass_fields__}
-    identity_check = (SOURCE / 'scripts/airflow_capacity_session.py').read_text() + '\n' + f"""
+    identity_check = (SOURCE / 'scripts/rehearsal/arm64/airflow_capacity_session.py').read_text() + '\n' + f"""
 import os
 session=Session.read({session_value!r})
 total=int(next(x for x in open('/proc/meminfo') if x.startswith('MemTotal:')).split()[1])
@@ -90,7 +90,7 @@ while time.time() < {session.started_at + 51 * 60!r}:
         monitor.stdin.write(monitor_code.encode())
         monitor.stdin.close()
         for phase, minute in (('prepare', 27), ('measure', 51)):
-            remote('sudo python3 /source/scripts/check-airflow-arm64-capacity.py ' + phase
+            remote('sudo python3 /source/scripts/rehearsal/arm64/check-airflow-arm64-capacity.py ' + phase
                    + ' --mode native --lease /proof/native-lease.json', minute)
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         failure = error
@@ -151,15 +151,15 @@ def main() -> None:
         return
     if args.refresh_baseline and args.phase != 'baseline':
         parser.error('--refresh-baseline requires --phase baseline')
-    spec = importlib.util.spec_from_file_location('vm', SOURCE / 'scripts/check-airflow-kernel-vm.py')
+    spec = importlib.util.spec_from_file_location('vm', SOURCE / 'scripts/checks/airflow/check-airflow-kernel-vm.py')
     vm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(vm)
     archive = PROOF / 'capacity-source.tar'
     with tarfile.open(archive, 'w') as stream:
         for name in ('docker-compose.prod.yml', 'scripts/airflow_operations.py', 'scripts/yunesa-airflow.sh',
-                     'scripts/airflow_capacity_session.py',
-                     'scripts/check-airflow-arm64-capacity.py', 'scripts/check-airflow-core-release.py',
-                     'scripts/airflow-local-check.py', 'scripts/check-airflow-kernel-guest.py',
+                     'scripts/rehearsal/arm64/airflow_capacity_session.py',
+                     'scripts/rehearsal/arm64/check-airflow-arm64-capacity.py', 'scripts/checks/airflow/check-airflow-core-release.py',
+                     'scripts/airflow-local-check.py', 'scripts/checks/airflow/check-airflow-kernel-guest.py',
                      'scripts/deployment-readiness.py', 'backend/server/worker_health.py', 'orchestration/yunesa_airflow'):
             stream.add(SOURCE / name, arcname=name, filter=lambda item: None if '__pycache__' in item.name else item)
     vm.copy_to_guest(archive, '/tmp/capacity-source.tar')
@@ -171,7 +171,7 @@ def main() -> None:
                 vm.ssh('sudo docker load -i /tmp/images.tar >/tmp/image-load.log && sudo rm /tmp/images.tar', timeout=7200)
                 continue
             option = ' --refresh-baseline' if args.refresh_baseline else ''
-            output = vm.ssh('sudo python3 /source/scripts/check-airflow-arm64-capacity.py ' + phase + option, timeout=7200)
+            output = vm.ssh('sudo python3 /source/scripts/rehearsal/arm64/check-airflow-arm64-capacity.py ' + phase + option, timeout=7200)
             marker = 'CAPACITY_RESULT='
             if marker not in output:
                 raise RuntimeError('Capacity guest returned no structured result')

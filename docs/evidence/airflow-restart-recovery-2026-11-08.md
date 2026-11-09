@@ -6,7 +6,7 @@ Additional local verification for tasks 4.4 and 6.2 ran on 8 November 2026. Both
 
 The retained native AMD64 project is `yunesa-airflow-it-73e9a2c6`. It uses eight real core services, Airflow 3.1.7 API server/DAG processor/LocalExecutor scheduler, the actual managed Docker operator and built ETL worker. Metadata, application data, log and control volumes were retained from the preceding release/drain rehearsal.
 
-`scripts/check-airflow-restart.py` reuses the existing core fixture, lifecycle CLI, authenticated Airflow API and application readiness implementation. Preparation verifies that the installed lifecycle module matches the working-tree source and that the fixture selects AMD64. The final baseline guards reject a different project or changed core container identity before lifecycle mutations.
+`scripts/checks/airflow/check-airflow-restart.py` reuses the existing core fixture, lifecycle CLI, authenticated Airflow API and application readiness implementation. Preparation verifies that the installed lifecycle module matches the working-tree source and that the fixture selects AMD64. The final baseline guards reject a different project or changed core container identity before lifecycle mutations.
 
 A temporary OpenSSH server ran inside the local controller, published only at `127.0.0.1:63597`. A disposable SSH key authenticated user `rehearsal`, with sudo access to the trusted Airflow operation. The test known-host file was pinned from that container's public host key. No production SSH identity or connection was used.
 
@@ -24,8 +24,8 @@ The recorded sequence was `status`, `on`, `off`, `on`. All four returned zero wi
 The controller mounted the retained root volume at `/opt/yunesa-app`, its named control volume at `/opt/yunesa-app/shared/airflow/control`, the log volume read-only at `/airflow-logs`, repository source read-only at `/source`, and ignored evidence at `/proof`. Its Docker socket referred to the local Desktop daemon. The controller temporarily installed OpenSSH server and sudo in its own filesystem.
 
 ```sh
-python /source/scripts/check-airflow-restart.py --project yunesa-airflow-it-73e9a2c6 --phase prepare
-python /source/scripts/check-airflow-restart.py --project yunesa-airflow-it-73e9a2c6 --phase verify
+python /source/scripts/checks/airflow/check-airflow-restart.py --project yunesa-airflow-it-73e9a2c6 --phase prepare
+python /source/scripts/checks/airflow/check-airflow-restart.py --project yunesa-airflow-it-73e9a2c6 --phase verify
 ```
 
 Preparation is repeatable on this retained fixture. A new unrelated project requires the original core-fixture installation first. The verify phase has a 45-minute bound. Preserve its evidence, then explicitly stop/remove its owned containers and network after review.

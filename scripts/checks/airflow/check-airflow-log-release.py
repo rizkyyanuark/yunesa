@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[3]
 ROOT = Path('/opt/yunesa-app')
 PROOF = Path('/proof/log-release.json')
 
@@ -33,7 +33,7 @@ def main() -> None:
         raise TimeoutError('Local log-volume rehearsal exceeded one hour')
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(3600)
-    spec = importlib.util.spec_from_file_location('core', SOURCE / 'scripts/check-airflow-core-release.py')
+    spec = importlib.util.spec_from_file_location('core', SOURCE / 'scripts/checks/airflow/check-airflow-core-release.py')
     core = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(core)
     # Sibling Docker containers resolve bind sources on the daemon, outside this controller.

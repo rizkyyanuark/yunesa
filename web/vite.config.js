@@ -12,6 +12,16 @@ export default defineConfig(({ mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url))
       }
     },
+    css: {
+      preprocessorOptions: {
+        less: {
+          javascriptEnabled: true,
+          lessOptions: {
+            timeout: 60000,
+          },
+        },
+      },
+    },
     server: {
       proxy: {
         '^/api': {

@@ -58,7 +58,7 @@ After terminating only the fixture lock-holder backend, the real initialization 
 
 ## Proof and current acceptance boundary
 
-Native regression entrypoints are `scripts/check-airflow-init.py` and `scripts/check-worker-health.py`, run in the existing local checker image. Their synthetic PostgreSQL/Redis/container/network resources were removed after verification. Proof remains under `.cache/airflow-init-diagnosis/` and `.cache/worker-health-diagnosis/`.
+Native regression entrypoints are `scripts/checks/airflow/check-airflow-init.py` and `scripts/checks/airflow/check-worker-health.py`, run in the existing local checker image. Their synthetic PostgreSQL/Redis/container/network resources were removed after verification. Proof remains under `.cache/airflow-init-diagnosis/` and `.cache/worker-health-diagnosis/`.
 
 ARM64 diagnostic scripts, results, builder logs and source/image identities remain under `.cache/airflow-arm64-capacity/`. The original failed measurements are retained. `--refresh-baseline` explicitly archives the previous baseline, installs the corrected local lifecycle bootstrap, validates every image as ARM64 and captures new core identities after intentional setup changes. The measurement phase continues to require identity preservation, actual application traffic, observed managed-worker cgroup peaks, no observed OOM/restart increase, positive post-OFF memory release and zero remaining managed workers.
 

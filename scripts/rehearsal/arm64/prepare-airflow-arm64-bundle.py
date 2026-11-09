@@ -13,17 +13,17 @@ import tarfile
 import time
 from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[3]
 API_IMAGE = 'yunesa-api:capacity-native-arm64'
 IMAGES = [API_IMAGE, *['yunesa-' + name + ':integration-arm64'
           for name in ('web', 'minio', 'airflow', 'etl-worker')],
           *['yunesa-arm64-proof/' + name + ':local' for name in ('postgres', 'redis', 'graph', 'vector')]]
 SOURCE_PATHS = ['docker-compose.prod.yml', 'orchestration', 'scripts/airflow_operations.py',
-    'scripts/airflow_capacity_session.py', 'scripts/yunesa-airflow.sh',
-    'scripts/airflow-native-controller.py',
-    'scripts/check-airflow-arm64-vm.py',
-    'scripts/check-airflow-arm64-capacity.py', 'scripts/check-airflow-core-release.py',
-    'scripts/check-airflow-kernel-guest.py', 'scripts/airflow-local-check.py',
+    'scripts/rehearsal/arm64/airflow_capacity_session.py', 'scripts/yunesa-airflow.sh',
+    'scripts/rehearsal/arm64/airflow-native-controller.py',
+    'scripts/rehearsal/arm64/check-airflow-arm64-vm.py',
+    'scripts/rehearsal/arm64/check-airflow-arm64-capacity.py', 'scripts/checks/airflow/check-airflow-core-release.py',
+    'scripts/checks/airflow/check-airflow-kernel-guest.py', 'scripts/airflow-local-check.py',
     'scripts/deployment-readiness.py', 'backend/server/worker_health.py']
 
 

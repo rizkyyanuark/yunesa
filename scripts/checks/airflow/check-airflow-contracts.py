@@ -12,14 +12,15 @@ import time
 import unittest
 from pathlib import Path
 
-from airflow_operations import AIRFLOW_SECRETS, IMAGE_KINDS, TRUSTED_FILES, AirflowOperations
-from airflow_operations import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from airflow_operations import AIRFLOW_SECRETS, IMAGE_KINDS, TRUSTED_FILES, AirflowOperations  # noqa: E402
+from airflow_operations import (  # noqa: E402
     configuration_digest, deployment_architecture, deployment_endpoints, deployment_project, lifecycle_lock,
     deployment_airflow_log_volume,
 )
-from yunesa_airflow.admission import atomic_json, require_open, set_gate
+from yunesa_airflow.admission import atomic_json, require_open, set_gate  # noqa: E402
 
-spec = importlib.util.spec_from_file_location('deployment', Path(__file__).with_name('deploy-production.py'))
+spec = importlib.util.spec_from_file_location('deployment', Path(__file__).resolve().parents[2] / 'deploy-production.py')
 deployment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deployment)
 
@@ -147,7 +148,7 @@ class LifecycleTests(unittest.TestCase):
         (self.release / '.env').chmod(0o600)
         (self.root / 'current').symlink_to(self.release)
         self.operation = AirflowOperations(self.root)
-        self.executable = str(Path(__file__).with_name('airflow_operations.py'))
+        self.executable = str(Path(__file__).resolve().parents[2] / 'airflow_operations.py')
 
     def tearDown(self):
         self.temporary.cleanup()

@@ -1549,7 +1549,6 @@ watch(currentChatId, (threadId, oldThreadId) => {
 </script>
 
 <style lang="less" scoped>
-@import '@/assets/css/main.css';
 @import '@/assets/css/animations.less';
 
 .chat-container {

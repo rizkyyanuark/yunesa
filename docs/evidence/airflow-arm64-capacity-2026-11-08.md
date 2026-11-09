@@ -64,7 +64,7 @@ The managed KG DAG, destination query, steady Airflow component peaks, post-work
 
 ## Commands and retained proof
 
-The controller ran `python /source/scripts/check-airflow-arm64-vm.py --phase baseline`. The two-vCPU attempt also ran its `measure` phase. Guest startup used `start_guest('arm64', 1926, 8, 'yunesa-arm64-capacity')`. Diagnostics read actual cgroup v2 files, kernel memory/swap/PSI, container network namespaces and the Docker Engine API. No service or application response was mocked.
+The controller ran `python /source/scripts/rehearsal/arm64/check-airflow-arm64-vm.py --phase baseline`. The two-vCPU attempt also ran its `measure` phase. Guest startup used `start_guest('arm64', 1926, 8, 'yunesa-arm64-capacity')`. Diagnostics read actual cgroup v2 files, kernel memory/swap/PSI, container network namespaces and the Docker Engine API. No service or application response was mocked.
 
 Proof is retained under `.cache/airflow-arm64-capacity/`, including `yunesa-reference.json`, `two-vcpu/`, `two-vcpu-analysis.json`, `eight-vcpu-baseline.log`, `eight-vcpu-baseline-exit.txt`, `baseline-failure.json`, `eight-vcpu-diagnostic.json`, `eight-vcpu-analysis.json` and `eight-vcpu-controller.json`. Exported proof excludes fixture environment files and credential values.
 

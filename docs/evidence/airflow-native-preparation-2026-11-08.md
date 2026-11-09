@@ -64,11 +64,11 @@ Log regresi berada di `.cache/airflow-native-controller-{windows,linux}-check.lo
 
 ## File yang disentuh
 
-- `scripts/airflow_capacity_session.py` untuk identitas/deadline/payload watchdog.
-- `scripts/airflow-native-controller.py` untuk render, preflight, supervisi serta cleanup.
-- `scripts/check-airflow-native-preparation.py` untuk regresi lokal dengan batas AWS/SSH eksplisit.
-- `scripts/prepare-airflow-arm64-bundle.py` untuk build thin image, pencocokan source, export, refresh source dan verify.
-- `scripts/check-airflow-arm64-capacity.py` dan `scripts/check-airflow-arm64-vm.py` untuk jalur native pada verifier existing.
+- `scripts/rehearsal/arm64/airflow_capacity_session.py` untuk identitas/deadline/payload watchdog.
+- `scripts/rehearsal/arm64/airflow-native-controller.py` untuk render, preflight, supervisi serta cleanup.
+- `scripts/rehearsal/arm64/check-airflow-native-preparation.py` untuk regresi lokal dengan batas AWS/SSH eksplisit.
+- `scripts/rehearsal/arm64/prepare-airflow-arm64-bundle.py` untuk build thin image, pencocokan source, export, refresh source dan verify.
+- `scripts/rehearsal/arm64/check-airflow-arm64-capacity.py` dan `scripts/rehearsal/arm64/check-airflow-arm64-vm.py` untuk jalur native pada verifier existing.
 - `backend/server/worker_health.py` untuk error scheme Redis yang teredaksi.
 - Runbook [rencana launch](../operations/airflow-arm64-native-launch-plan.md) dan laporan ini.
 

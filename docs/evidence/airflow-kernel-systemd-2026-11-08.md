@@ -16,11 +16,11 @@ The installed reconciliation unit matched repository bytes, SHA-256 `f0aefb80844
 
 ## Execution
 
-The host helper is `scripts/check-airflow-kernel-vm.py`. The in-guest assertions are `scripts/check-airflow-kernel-guest.py`. The helper ran inside a disposable controller with QEMU, cloud-image-utils, SSH client and CA certificates installed. VM files were isolated under `/vm`, source was read-only under `/source`, and proof was written under `/proof`.
+The host helper is `scripts/checks/airflow/check-airflow-kernel-vm.py`. The in-guest assertions are `scripts/checks/airflow/check-airflow-kernel-guest.py`. The helper ran inside a disposable controller with QEMU, cloud-image-utils, SSH client and CA certificates installed. VM files were isolated under `/vm`, source was read-only under `/source`, and proof was written under `/proof`.
 
 ```sh
-python /source/scripts/check-airflow-kernel-vm.py setup
-python /source/scripts/check-airflow-kernel-vm.py verify
+python /source/scripts/checks/airflow/check-airflow-kernel-vm.py setup
+python /source/scripts/checks/airflow/check-airflow-kernel-vm.py verify
 ```
 
 `setup` verifies the official image checksum, generates disposable SSH client/host keys, creates a fresh QCOW2 overlay and cloud-init seed, boots with KVM and waits for actual guest Docker installation. Existing guest disks are rejected to preserve prior state. `verify` transfers selected source and exported local images, installs the original unit, enables it through systemd and drives the reboot scenarios. Every boot reads `/proc/sys/kernel/random/boot_id` inside the guest.

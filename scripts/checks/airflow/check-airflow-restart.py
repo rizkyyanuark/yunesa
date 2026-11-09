@@ -10,16 +10,18 @@ import re
 import secrets
 import signal
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from airflow_operations import AirflowOperations, OperationError, RUNTIME_SERVICES
-from yunesa_airflow.admission import atomic_json, require_open
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from airflow_operations import AirflowOperations, OperationError, RUNTIME_SERVICES  # noqa: E402
+from yunesa_airflow.admission import atomic_json, require_open  # noqa: E402
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[3]
 ROOT = Path('/opt/yunesa-app')
 PROOF = Path('/proof')
-spec = importlib.util.spec_from_file_location('core_checks', SOURCE / 'scripts/check-airflow-core-release.py')
+spec = importlib.util.spec_from_file_location('core_checks', SOURCE / 'scripts/checks/airflow/check-airflow-core-release.py')
 core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)
 local = core.local

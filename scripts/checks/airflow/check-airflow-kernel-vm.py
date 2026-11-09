@@ -118,7 +118,7 @@ def start_guest(architecture: str, memory_mib: int, cpus: int, hostname: str,
 
 
 def guest(action: str) -> dict:
-    output = ssh('sudo python3 /source/scripts/check-airflow-kernel-guest.py ' + action, timeout=1200)
+    output = ssh('sudo python3 /source/scripts/checks/airflow/check-airflow-kernel-guest.py ' + action, timeout=1200)
     marker = 'KERNEL_RESULT='
     if marker not in output:
         raise RuntimeError('Guest returned no structured result')
@@ -142,7 +142,7 @@ def verify() -> None:
     with tarfile.open(archive, 'w') as stream:
         for name in ('docker-compose.prod.yml', 'docker/yunesa-airflow-reconcile.service',
                      'scripts/airflow_operations.py', 'scripts/yunesa-airflow.sh',
-                     'scripts/check-airflow-kernel-guest.py', 'orchestration/yunesa_airflow'):
+                     'scripts/checks/airflow/check-airflow-kernel-guest.py', 'orchestration/yunesa_airflow'):
             stream.add(SOURCE / name, arcname=name, filter=lambda item: None if '__pycache__' in item.name else item)
     copy_to_guest(archive, '/tmp/source.tar')
     ssh('sudo mkdir /source && sudo tar -xf /tmp/source.tar -C /source')
