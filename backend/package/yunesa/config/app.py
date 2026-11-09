@@ -71,11 +71,11 @@ class Config(BaseModel):
     # Model configuration
     # ============================================================
     default_model: str = Field(
-        default="gemini/gemini-flash-latest",
+        default="gemini/gemini-flash-lite-latest",
         description="Default chat model",
     )
     fast_model: str = Field(
-        default="gemini/gemini-flash-latest",
+        default="gemini/gemini-flash-lite-latest",
         description="Fast response model",
     )
     embed_model: str = Field(
