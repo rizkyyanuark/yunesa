@@ -48,6 +48,7 @@ logs/
 # Local tools and OS files
 .agents/
 .codex/
+openspec/
 .vscode/
 .idea/
 .DS_Store
