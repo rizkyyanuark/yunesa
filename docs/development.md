@@ -5,6 +5,8 @@ Peta utama: [PRD](../PRD.md), [arsitektur](../ARCHITECTURE.md), [panduan agen](.
 
 ## Alur kerja
 
+Aturan branch, review MR, gate deployment dan bukti release mengikuti [panduan kontribusi](../CONTRIBUTING.md). Jalur release adalah branch perubahan, MR dan verifikasi, merge `main`, build ARM64, integrasi core serta Airflow, deployment otomatis, lalu validasi artifact release/health.
+
 1. Rekonstruksi kondisi sekarang dari kode, entrypoint, konfigurasi, dan bukti pengujian.
 2. Tulis proposal: masalah, tujuan, batas pekerjaan, dan dampak.
 3. Tulis requirement dengan skenario penerimaan; jelaskan desain untuk keputusan yang berpengaruh.

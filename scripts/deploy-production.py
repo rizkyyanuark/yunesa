@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -26,14 +27,152 @@ ARCHITECTURE = 'arm64'
 SERVICES = ("postgres", "redis", "graph", "vector", "minio", "api", "worker", "web")
 SECRET_NAMES = ("GLOBAL_PASSWORD", "JWT_SECRET_KEY", "GEMINI_API_KEY", "SILICONFLOW_API_KEY", *AIRFLOW_SECRETS)
 OPTIONAL_NAMES = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
+OPERATION_SECONDS = 1800
+RECOVERY_SECONDS = 1200
+EXECUTION: ReleaseExecution | None = None
 
 
 class DeployError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, category: str = 'guard'):
+        super().__init__(message)
+        self.category = category
 
 
 class QuiescenceError(DeployError):
     pass
+
+
+class ReleaseExecution:
+    def __init__(self, root: Path, operation: str, payload: dict,
+                 operation_seconds: float = OPERATION_SECONDS, recovery_seconds: float = RECOVERY_SECONDS) -> None:
+        self.operation = operation
+        self.operation_seconds = operation_seconds
+        self.recovery_seconds = recovery_seconds
+        self.stage = 'preflight'
+        self.step = None
+        self.recovery_status = 'not_started'
+        self.original_failure = None
+        self.reference = 'release-' + secrets.token_hex(16)
+        self.journal_available = True
+        values = payload if isinstance(payload, dict) else {}
+        self.sensitive = [values[name] for name in (*SECRET_NAMES, *OPTIONAL_NAMES, 'ADMIN_PASSWORD',
+                                                   'CI_REGISTRY_PASSWORD') if isinstance(values.get(name), str) and values[name]]
+        directory = root / 'diagnostics'
+        directory.mkdir(mode=0o700, exist_ok=True)
+        info = directory.stat()
+        if directory.is_symlink() or info.st_uid != 0 or info.st_mode & 0o077:
+            raise DeployError('Diagnostic directory must be private and root-owned')
+        descriptor = os.open(directory / (self.reference + '.jsonl'),
+                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        self.journal = os.fdopen(descriptor, 'w', encoding='utf-8')
+
+    def redact(self, value: object) -> object:
+        if isinstance(value, dict):
+            return {key: self.redact(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self.redact(item) for item in value]
+        if isinstance(value, str):
+            for secret in sorted(self.sensitive, key=len, reverse=True):
+                value = value.replace(secret, '[redacted]')
+        return value
+
+    def event(self, event: str, **fields: object) -> None:
+        if not self.journal_available:
+            return
+        record = self.redact({'at': datetime.now(UTC).isoformat(), 'event': event,
+                              'operation': self.operation, 'stage': self.stage, 'step': self.step, **fields})
+        try:
+            self.journal.write(json.dumps(record) + '\n')
+            self.journal.flush()
+            os.fsync(self.journal.fileno())
+        except OSError:
+            self.journal_available = False
+            if self.recovery_status != 'running':
+                raise
+
+    def describe(self, error: BaseException) -> dict:
+        return {'stage': self.stage, 'step': self.step, 'type': type(error).__name__,
+                'category': getattr(error, 'category', 'invalid_state'),
+                'message': str(error) if isinstance(error, (DeployError, OperationError)) else type(error).__name__}
+
+    def interrupted(self, number: int, _frame: object) -> None:
+        if self.stage == 'finalization':
+            self.event('cancellation_during_finalization', signal=number)
+            return
+        if self.recovery_status == 'running':
+            if number == signal.SIGALRM:
+                raise DeployError('Recovery deadline exceeded', category='recovery_deadline')
+            self.event('cancellation_during_recovery', signal=number)
+            return
+        if number == signal.SIGALRM:
+            raise DeployError('Deployment operation deadline exceeded', category='deadline')
+        raise DeployError('Deployment cancellation requested', category='cancelled')
+
+    def __enter__(self) -> ReleaseExecution:
+        try:
+            self.event('started', operation_seconds=self.operation_seconds, recovery_seconds=self.recovery_seconds)
+        except OSError:
+            self.journal.close()
+            raise
+        self.handlers = {number: signal.getsignal(number) for number in (signal.SIGALRM, signal.SIGTERM, signal.SIGINT)}
+        self.previous_timer = signal.getitimer(signal.ITIMER_REAL)
+        for number in self.handlers:
+            signal.signal(number, self.interrupted)
+        signal.setitimer(signal.ITIMER_REAL, self.operation_seconds)
+        return self
+
+    def phase(self, stage: str) -> None:
+        if stage == 'finalization':
+            # Readiness has passed. Finish the short release-pointer update before honoring cancellation.
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        self.stage = stage
+        self.step = None
+        self.event('phase')
+
+    def recover(self, error: BaseException) -> None:
+        self.original_failure = self.describe(error)
+        self.recovery_status = 'running'
+        signal.setitimer(signal.ITIMER_REAL, self.recovery_seconds)
+        self.phase('recovery')
+        self.event('recovery_started', failure=self.original_failure)
+
+    def __exit__(self, _kind: type[BaseException] | None, error: BaseException | None, _traceback: object) -> None:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        try:
+            if self.recovery_status == 'running':
+                self.recovery_status = 'deadline_exceeded' if getattr(error, 'category', '') == 'recovery_deadline' else 'failed'
+            if isinstance(error, QuiescenceError):
+                self.recovery_status = 'quiescence_closed'
+            if error:
+                self.event('failed', failure=self.original_failure or self.describe(error),
+                           recovery_status=self.recovery_status,
+                           recovery_error=self.describe(error) if self.recovery_status in ('failed', 'deadline_exceeded') else None)
+            else:
+                self.event('verified')
+        except OSError:
+            self.journal_available = False
+        finally:
+            try:
+                self.journal.close()
+            except OSError:
+                self.journal_available = False
+            for number, handler in self.handlers.items():
+                signal.signal(number, handler)
+            signal.setitimer(signal.ITIMER_REAL, *self.previous_timer)
+
+    def failure(self, error: BaseException) -> dict:
+        original = self.original_failure or self.describe(error)
+        category = original['category']
+        if self.recovery_status in ('failed', 'deadline_exceeded'):
+            category = 'recovery_deadline' if self.recovery_status == 'deadline_exceeded' else 'recovery_failed'
+        return {'status': 'failed', 'stage': original['stage'], 'category': category,
+                'diagnostic_reference': self.reference if self.journal_available else None,
+                'recovery_status': self.recovery_status}
+
+
+def phase(stage: str) -> None:
+    if EXECUTION is not None:
+        EXECUTION.phase(stage)
 
 
 def airflow_deadline(name: str, default: int) -> int:
@@ -47,6 +186,9 @@ def airflow_deadline(name: str, default: int) -> int:
 
 
 def run(arguments: list[str], *, label: str, data: bytes | None = None, timeout: int = 300, output_file=None) -> bytes:
+    if EXECUTION is not None:
+        EXECUTION.step = label
+        EXECUTION.event('command_started')
     try:
         result = subprocess.run(
             arguments,
@@ -57,9 +199,11 @@ def run(arguments: list[str], *, label: str, data: bytes | None = None, timeout:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        raise DeployError(f"{label}: command unavailable or deadline exceeded") from error
+        raise DeployError(f"{label}: command unavailable or deadline exceeded", category='command_failed') from error
     if result.returncode:
-        raise DeployError(f"{label}: exit {result.returncode}; raw output suppressed")
+        if EXECUTION is not None:
+            EXECUTION.event('command_failed', exit_code=result.returncode)
+        raise DeployError(f"{label}: exit {result.returncode}; raw output suppressed", category='command_failed')
     return result.stdout or b""
 
 
@@ -253,7 +397,7 @@ def _backup(release: Path) -> Path:
         airflow.off(deadline=drain_deadline, preserve_requested=True)
         run(["docker", "pull", "alpine:3.22"], label="Prepare backup helper image")
     except (OperationError, DeployError) as error:
-        raise QuiescenceError(str(error)) from error
+        raise QuiescenceError(str(error), category=getattr(error, 'category', 'quiescence')) from error
     compose(release, "stop", "web", label="Stop accepting public application requests")
     active = compose(
         release,
@@ -447,7 +591,19 @@ def restore_airflow(release: Path) -> None:
         set_gate(airflow.control, False, release.name)
 
 
+def release_evidence(release: Path, operation: str, evidence: dict) -> dict:
+    manifest = checked_config(release / 'manifest.json')
+    state = AirflowOperations(ROOT, release).state()
+    if state['requested'] not in ('on', 'off') or state['phase'] != state['requested']:
+        raise DeployError('Release evidence requires restored Airflow lifecycle state')
+    return {"operation": operation, "status": "passed", "release": release.name, "project": PROJECT,
+            "commit": manifest["commit"], "config_sha256": manifest["config_sha256"],
+            "images": {kind: manifest.get(kind.lower() + "_image") for kind in IMAGE_KINDS},
+            "airflow": {"requested": state["requested"], "phase": state["phase"]}, "readiness": evidence}
+
+
 def deploy(payload: dict, operation: str) -> dict:
+    phase('prepare')
     current = pointed_release("current")
     previous = pointed_release("previous")
     if operation == "rollback":
@@ -456,7 +612,9 @@ def deploy(payload: dict, operation: str) -> dict:
         if AirflowOperations(ROOT, current).state()['requested'] == 'on' and trusted_airflow_version(previous) != '3.1.7':
             raise DeployError('Cannot roll back enabled Airflow to an incompatible release')
         try:
+            phase('quiescence')
             backup(current)
+            phase('activation')
             compose(
                 previous,
                 "up",
@@ -468,11 +626,17 @@ def deploy(payload: dict, operation: str) -> dict:
                 *SERVICES,
                 label="Start previous release",
             )
+            phase('verification')
             evidence = readiness(previous, providers=False)
+            phase('airflow')
             restore_airflow(previous)
+            proof = release_evidence(previous, "rollback", evidence)
+            phase('finalization')
         except QuiescenceError:
             raise
-        except DeployError:
+        except (DeployError, OperationError, OSError, ValueError, KeyError) as error:
+            if EXECUTION is not None:
+                EXECUTION.recover(error)
             try:
                 AirflowOperations(ROOT, previous).compose('stop', '--timeout', '30', *RUNTIME_SERVICES)
             except OperationError:
@@ -488,11 +652,14 @@ def deploy(payload: dict, operation: str) -> dict:
                 *SERVICES,
                 label="Restore current release after rollback failure",
             )
+            readiness(current, providers=False)
             restore_airflow(current)
+            if EXECUTION is not None:
+                EXECUTION.recovery_status = 'passed'
             raise
         set_release_link("previous", current)
         set_release_link("current", previous)
-        return {"operation": "rollback", "release": previous.name, "readiness": evidence}
+        return proof
     if current:
         old_env = (current / ".env").read_text(encoding="utf-8")
         if f"GLOBAL_PASSWORD='{payload['GLOBAL_PASSWORD']}'\n" not in old_env:
@@ -510,6 +677,7 @@ def deploy(payload: dict, operation: str) -> dict:
         image_platform(payload[f'YUNESA_{kind}_IMAGE'])
     try:
         if current:
+            phase('quiescence')
             backup(current)
         admin_password = payload["ADMIN_PASSWORD"]
         credentials = ROOT / "shared" / "admin-credentials.json"
@@ -517,12 +685,19 @@ def deploy(payload: dict, operation: str) -> dict:
             secure_write(credentials, json.dumps({"username": "rizkyyanuark", "password": admin_password}))
         elif checked_config(credentials).get("password") != admin_password:
             raise DeployError("Changing an existing app admin password requires the real account update flow")
+        phase('activation')
         compose(release, "up", "-d", "--no-build", "--wait", "--wait-timeout", "300", *SERVICES, label="Start release")
+        phase('verification')
         evidence = readiness(release, providers=True)
+        phase('airflow')
         restore_airflow(release)
+        proof = release_evidence(release, "deploy", evidence)
+        phase('finalization')
     except QuiescenceError:
         raise
-    except DeployError:
+    except (DeployError, OperationError, OSError, ValueError, KeyError) as error:
+        if EXECUTION is not None:
+            EXECUTION.recover(error)
         try:
             AirflowOperations(ROOT, release).compose('stop', '--timeout', '30', *RUNTIME_SERVICES)
         except OperationError:
@@ -544,16 +719,18 @@ def deploy(payload: dict, operation: str) -> dict:
             print(json.dumps({"operation": "automatic_rollback", "release": current.name, "status": "passed"}))
         else:
             compose(release, "stop", "web", "api", "worker", label="Stop failed initial application release")
+        if EXECUTION is not None:
+            EXECUTION.recovery_status = 'passed'
         raise
     secure_write(release / "readiness.json", json.dumps(evidence, indent=2) + "\n")
     if current:
         set_release_link("previous", current)
     set_release_link("current", release)
-    return {"operation": "deploy", "release": release.name, "project": PROJECT, "readiness": evidence}
+    return proof
 
 
 def main() -> int:
-    global PROJECT, ARCHITECTURE
+    global PROJECT, ARCHITECTURE, EXECUTION
     parser = argparse.ArgumentParser()
     parser.add_argument("operation", choices=("deploy", "rollback"))
     args = parser.parse_args()
@@ -561,9 +738,12 @@ def main() -> int:
         print("Deployment requires the root-installed wrapper", file=sys.stderr)
         return 1
     os.umask(0o077)
+    root_trusted = False
+    payload = {}
     try:
         if ROOT.is_symlink() or ROOT.stat().st_uid != 0 or ROOT.stat().st_mode & 0o022:
             raise DeployError("Deployment root must be root-owned and not group/world writable")
+        root_trusted = True
         registry = checked_config(ROOT / "config" / "registry.json")
         PROJECT = deployment_project(registry)
         ARCHITECTURE = deployment_architecture(registry)
@@ -574,55 +754,52 @@ def main() -> int:
         if len(raw) > 65536:
             raise DeployError("Deployment request exceeds allowed size")
         payload = json.loads(raw)
-        validate_request(payload, args.operation, registry)
-        if shutil.disk_usage(ROOT).free < 2 * 1024**3:
-            raise DeployError("At least 2 GiB free disk is required before deployment")
-        for folder in ("releases", "backups", "shared/data/avatars", "shared/saves", "shared/models"):
-            (ROOT / folder).mkdir(mode=0o700, parents=True, exist_ok=True)
-        (ROOT / "shared" / "data" / "avatars").chmod(0o755)
-        with lifecycle_lock(ROOT):
-            ownership = ROOT / "shared" / "deployment-owner.json"
-            if ownership.exists():
-                if checked_config(ownership).get("project") != PROJECT:
-                    raise DeployError("Shared state belongs to another deployment")
-            else:
-                volumes = run(
-                    [
-                        "docker",
-                        "volume",
-                        "ls",
-                        "--filter",
-                        f"label=com.docker.compose.project={PROJECT}",
-                        "--format",
-                        "{{.Name}}",
-                    ],
-                    label="Check new deployment volume namespace",
-                ).strip()
-                if volumes:
-                    raise DeployError("Existing unowned project volumes require manual inventory before deployment")
-                secure_write(
-                    ownership, json.dumps({"project": PROJECT, "created_at": datetime.now(UTC).isoformat()}) + "\n"
-                )
-            with tempfile.TemporaryDirectory(prefix="yunesa-docker-", dir=ROOT) as docker_config:
-                os.environ["DOCKER_CONFIG"] = docker_config
-                run(
-                    [
-                        "docker",
-                        "login",
-                        registry["registry"],
-                        "--username",
-                        payload["CI_REGISTRY_USER"],
-                        "--password-stdin",
-                    ],
-                    label="Registry authentication",
-                    data=payload["CI_REGISTRY_PASSWORD"].encode(),
-                )
-                print(json.dumps(deploy(payload, args.operation), sort_keys=True))
+        if (isinstance(payload, dict) and type(payload.get('release_evidence_protocol')) is int
+                and payload == {"release_evidence_protocol": 2}):
+            print(json.dumps({**payload, 'operation_seconds': OPERATION_SECONDS, 'recovery_seconds': RECOVERY_SECONDS}))
+            return 0
+        with ReleaseExecution(ROOT, args.operation, payload) as execution:
+            EXECUTION = execution
+            validate_request(payload, args.operation, registry)
+            if shutil.disk_usage(ROOT).free < 2 * 1024**3:
+                raise DeployError("At least 2 GiB free disk is required before deployment")
+            for folder in ("releases", "backups", "shared/data/avatars", "shared/saves", "shared/models"):
+                (ROOT / folder).mkdir(mode=0o700, parents=True, exist_ok=True)
+            (ROOT / "shared" / "data" / "avatars").chmod(0o755)
+            with lifecycle_lock(ROOT):
+                ownership = ROOT / "shared" / "deployment-owner.json"
+                if ownership.exists():
+                    if checked_config(ownership).get("project") != PROJECT:
+                        raise DeployError("Shared state belongs to another deployment")
+                else:
+                    volumes = run(
+                        ["docker", "volume", "ls", "--filter", f"label=com.docker.compose.project={PROJECT}",
+                         "--format", "{{.Name}}"], label="Check new deployment volume namespace",
+                    ).strip()
+                    if volumes:
+                        raise DeployError("Existing unowned project volumes require manual inventory before deployment")
+                    secure_write(ownership, json.dumps({'project': PROJECT, 'created_at': datetime.now(UTC).isoformat()}) + '\n')
+                with tempfile.TemporaryDirectory(prefix="yunesa-docker-", dir=ROOT) as docker_config:
+                    os.environ["DOCKER_CONFIG"] = docker_config
+                    run(["docker", "login", registry["registry"], "--username", payload["CI_REGISTRY_USER"],
+                         "--password-stdin"], label="Registry authentication", data=payload["CI_REGISTRY_PASSWORD"].encode())
+                    print(json.dumps(deploy(payload, args.operation), sort_keys=True))
         return 0
     except (DeployError, OperationError, OSError, ValueError, KeyError) as error:
-        message = str(error) if isinstance(error, (DeployError, OperationError)) else f"Invalid deployment state ({type(error).__name__})"
-        print(message, file=sys.stderr)
+        if EXECUTION is None and root_trusted:
+            try:
+                EXECUTION = ReleaseExecution(ROOT, args.operation, payload)
+                EXECUTION.event('failed', failure=EXECUTION.describe(error))
+                EXECUTION.journal.close()
+            except (DeployError, OSError):
+                EXECUTION = None
+        failure = (EXECUTION.failure(error) if EXECUTION is not None else
+                   {'status': 'failed', 'stage': 'preflight', 'category': 'invalid_state',
+                    'diagnostic_reference': None, 'recovery_status': 'not_started'})
+        print(json.dumps(failure), file=sys.stderr)
         return 1
+    finally:
+        EXECUTION = None
 
 
 if __name__ == "__main__":

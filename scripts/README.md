@@ -4,13 +4,16 @@ Entry point CI, deployment, bootstrap, kontrol SSH dan setup lokal berada langsu
 
 ## Verifikasi Airflow
 
-`checks/airflow/` berisi sebelas verifier untuk kontrak deployment, DAG, adopsi metadata/log, init, race, release/rollback, restart, boot Linux dan heartbeat worker. Jalankan verifier integrasi dengan dependency serta resource lokal terisolasi sesuai panduan operasional.
+`checks/airflow/` berisi verifier untuk kontrak deployment, DAG, adopsi metadata/log, init, race, release/rollback, restart, boot Linux dan heartbeat worker. Jalankan verifier integrasi dengan dependency serta resource lokal terisolasi sesuai panduan operasional.
 
-Contoh pemeriksaan kontrak pada lingkungan Linux dengan dependency Docker tersedia
+Pemeriksaan kontrak deployment pada Linux root dengan Python dan Git
 
 ```sh
 python scripts/checks/airflow/check-airflow-contracts.py
+python scripts/checks/check-production-request.py
 ```
+
+Gate `verify-deployment` menjalankan kedua suite pada MR dan protected `main`. Kontrak platform image dan observasi worker Docker berada pada `checks/airflow/check-airflow-docker-contracts.py`, dijalankan gate integrasi dengan `YUNESA_CONTRACT_IMAGE` menunjuk image Airflow yang diuji. Lihat `CONTRIBUTING.md` untuk kontrak artifact dan kebutuhan protokol helper produksi.
 
 `airflow-local-check.py` tetap menjadi helper bersama untuk gate CI dan verifier. Gate CI mengimpornya langsung.
 
