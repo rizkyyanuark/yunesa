@@ -4,12 +4,14 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 from airflow_operations import (
-    TRUSTED_FILES, AirflowOperations, configuration_digest, deployment_airflow_log_volume,
-    deployment_architecture, deployment_endpoints, deployment_project, trusted_json,
+    TRUSTED_FILES,
+    configuration_digest,
+    deployment_architecture,
+    deployment_endpoints,
+    deployment_project,
 )
 
 ROOT = Path("/opt/yunesa-app")
@@ -20,11 +22,10 @@ def main() -> int:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--registry", default="registry.tugasakhir.space:443")
     parser.add_argument("--image-prefix", default="registry.tugasakhir.space:443/rizkyyanuark/yunesa")
-    parser.add_argument('--local-base-url', default='http://127.0.0.1:8088')
-    parser.add_argument('--public-base-url', default='https://yunesa.tugasakhir.space')
-    parser.add_argument('--project', default='yunesa-app')
-    parser.add_argument('--architecture', choices=('arm64', 'amd64'), default='arm64')
-    parser.add_argument('--airflow-log-volume')
+    parser.add_argument("--local-base-url", default="http://127.0.0.1:8088")
+    parser.add_argument("--public-base-url", default="https://yunesa.tugasakhir.space")
+    parser.add_argument("--project", default="yunesa-app")
+    parser.add_argument("--architecture", choices=("arm64", "amd64"), default="arm64")
     args = parser.parse_args()
     try:
         endpoints = deployment_endpoints(vars(args))
@@ -42,7 +43,6 @@ def main() -> int:
         "docker-compose.prod.yml": "config/docker-compose.prod.yml",
     }
     files.update(TRUSTED_FILES)
-    files['scripts/yunesa-airflow.sh'] = 'bin/airflow'
     for name in files:
         if not (source / name).is_file() or (source / name).is_symlink():
             raise SystemExit(f"Missing regular source file: {name}")
@@ -59,17 +59,6 @@ def main() -> int:
         directory.mkdir(mode=0o700, exist_ok=True)
         if directory.stat().st_uid != 0 or directory.stat().st_mode & 0o022:
             raise SystemExit(f"Directory must be root-owned and not group/world writable: {name}")
-    registry_path = ROOT / 'config/registry.json'
-    previous = trusted_json(registry_path) if registry_path.exists() else {}
-    current_environment = AirflowOperations(ROOT).environment() if (ROOT / 'current').exists() else {}
-    prior_volume = previous.get('airflow_log_volume', current_environment.get('YUNESA_AIRFLOW_LOG_VOLUME'))
-    if args.airflow_log_volume is not None and prior_volume is not None and args.airflow_log_volume != prior_volume:
-        raise SystemExit('Airflow log volume change requires an explicit offline migration')
-    selected_volume = args.airflow_log_volume if args.airflow_log_volume is not None else prior_volume
-    volume_config = {'project': project}
-    if selected_volume is not None:
-        volume_config['airflow_log_volume'] = selected_volume
-    log_volume = deployment_airflow_log_volume(volume_config, current_environment)
     for name, destination in files.items():
         target = ROOT / destination
         if target.is_symlink():
@@ -78,28 +67,19 @@ def main() -> int:
         shutil.copyfile(source / name, target)
         target.chmod(0o700 if destination.startswith("bin/") else 0o600)
     digest = configuration_digest(source)
-    registry = {"registry": args.registry, "image_prefix": args.image_prefix, "config_sha256": digest,
-                'project': project, 'architecture': architecture, 'airflow_log_volume': log_volume, **endpoints}
+    registry = {
+        "registry": args.registry,
+        "image_prefix": args.image_prefix,
+        "config_sha256": digest,
+        "project": project,
+        "architecture": architecture,
+        **endpoints,
+    }
     path = ROOT / "config" / "registry.json"
     if path.is_symlink():
         raise SystemExit("Refusing registry config symlink")
     path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
     path.chmod(0o600)
-    unit = Path('/etc/systemd/system/yunesa-airflow-reconcile.service')
-    if unit.is_symlink():
-        raise SystemExit('Refusing symlink service unit')
-    unit.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-    shutil.copyfile(source / 'docker/yunesa-airflow-reconcile.service', unit)
-    unit.chmod(0o644)
-    compat = Path('/usr/local/bin/yunesa-airflow')
-    if compat.is_symlink():
-        raise SystemExit('Refusing symlink compatibility entrypoint')
-    compat.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-    shutil.copyfile(source / 'scripts/yunesa-airflow.sh', compat)
-    compat.chmod(0o755)
-    if shutil.which('systemctl') and Path('/run/systemd/system').exists():
-        subprocess.run(['systemctl', 'daemon-reload'], check=True)
-        subprocess.run(['systemctl', 'enable', 'yunesa-airflow-reconcile.service'], check=True)
     print(
         json.dumps(
             {

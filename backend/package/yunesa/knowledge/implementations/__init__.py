@@ -1,24 +1,8 @@
-"""Concrete knowledge base implementations for UNESA Academic Knowledge Graph.
+"""Runtime vector knowledge base implementations for UNESA."""
 
-Available backends:
-- MilvusKB: Standard vector knowledge base powered by Milvus / Zilliz Cloud.
-- AcademicKGVectorStore: Object-oriented GraphRAG vector store manager.
-"""
-
-from .milvus import (
-    MilvusKB,
-    AcademicKGVectorStore,
-    write_vector_index_to_milvus,
-    build_milvus_index_records,
-    summarize_milvus_records,
-    inspect_milvus_collections,
-)
+from .milvus import MilvusKB, MilvusRetrievalConfig
 
 __all__ = [
     "MilvusKB",
-    "AcademicKGVectorStore",
-    "write_vector_index_to_milvus",
-    "build_milvus_index_records",
-    "summarize_milvus_records",
-    "inspect_milvus_collections",
+    "MilvusRetrievalConfig",
 ]

@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SOURCE / 'scripts'))
-from airflow_operations import AIRFLOW_SECRETS, IMAGE_KINDS, TRUSTED_FILES, configuration_digest  # noqa: E402
+from airflow_operations import IMAGE_KINDS, TRUSTED_FILES, configuration_digest  # noqa: E402
 
 spec = importlib.util.spec_from_file_location('request', SOURCE / 'scripts/production-request.py')
 request = importlib.util.module_from_spec(spec)
@@ -58,7 +58,7 @@ class RequestTests(unittest.TestCase):
             'CI_COMMIT_REF_PROTECTED': 'true', 'CI_REGISTRY': 'registry.test',
             'CI_REGISTRY_IMAGE': 'registry.test/owner/yunesa', 'CI_REGISTRY_USER': 'job',
             'CI_REGISTRY_PASSWORD': 'private-registry-fixture',
-            **{name: 'private-secret-fixture' for name in (*AIRFLOW_SECRETS, 'GLOBAL_PASSWORD',
+            **{name: 'private-secret-fixture' for name in ('GLOBAL_PASSWORD',
                'JWT_SECRET_KEY', 'GEMINI_API_KEY', 'SILICONFLOW_API_KEY', 'ADMIN_PASSWORD')},
         }
         for kind in IMAGE_KINDS:
@@ -69,7 +69,6 @@ class RequestTests(unittest.TestCase):
             'operation': 'deploy', 'status': 'passed', 'release': self.revision + '-20261110000000',
             'project': 'yunesa-app', 'commit': self.revision, 'config_sha256': self.payload['YUNESA_CONFIG_SHA256'],
             'images': {kind: self.environment['YUNESA_' + kind + '_IMAGE'] for kind in IMAGE_KINDS},
-            'airflow': {'requested': 'off', 'phase': 'off'},
             'readiness': {
                 'storage': dict.fromkeys(('postgres', 'redis_write_read', 'memgraph_query', 'qdrant',
                                           'minio_upload_download_delete', 'public_object_bytes',
@@ -134,7 +133,6 @@ class RequestTests(unittest.TestCase):
     def test_verified_artifacts_remove_unknown_fields_and_credentials(self):
         self.proof['secret'] = 'private-secret-fixture'
         self.proof['readiness']['storage']['secret'] = 'private-secret-fixture'
-        self.proof['airflow']['secret'] = 'private-secret-fixture'
         self.assertEqual(self.invoke(), 0)
         release = json.loads(Path('artifacts/production-release.json').read_text())
         health = json.loads(Path('artifacts/production-health.json').read_text())
@@ -194,17 +192,15 @@ class RequestTests(unittest.TestCase):
 
     def test_identity_readiness_and_lifecycle_failures(self):
         mutations = [({'commit': 'a' * 40}), ({'config_sha256': 'c' * 64}), ({'operation': 'rollback'}),
-                     ({'airflow': {'requested': 'on', 'phase': 'starting'}}),
                      ({'readiness': {'storage': {'postgres': 'passed'}}})]
         for fields in mutations:
             with self.subTest(fields=fields), self.assertRaises(request.RequestError):
                 request.verify_release({**self.proof, **fields}, self.payload, 'deploy')
 
-    def test_rollback_receipt_uses_target_identity_and_supports_legacy_off(self):
+    def test_rollback_receipt_uses_target_identity(self):
         self.proof.update(operation='rollback', commit='d' * 40, release='d' * 40 + '-20261110000000')
-        self.proof['images'].update(AIRFLOW=None, ETL_WORKER=None)
         self.assertEqual(request.verify_release(self.proof, self.payload, 'rollback')['commit'], 'd' * 40)
-        self.proof['airflow'] = {'requested': 'on', 'phase': 'on'}
+        self.proof['images']['API'] = 'invalid-image-ref'
         with self.assertRaises(request.RequestError):
             request.verify_release(self.proof, self.payload, 'rollback')
 

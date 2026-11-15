@@ -9,7 +9,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from airflow_operations import AIRFLOW_SECRETS, IMAGE_KINDS, configuration_digest
+from airflow_operations import IMAGE_KINDS, configuration_digest
 
 
 class RequestError(RuntimeError):
@@ -28,7 +28,7 @@ def wrapper_timeout(protocol: object) -> int:
 
 
 def wrapper_failure(stderr: bytes) -> dict:
-    stages = {'preflight', 'prepare', 'quiescence', 'activation', 'verification', 'airflow', 'finalization', 'recovery'}
+    stages = {'preflight', 'prepare', 'quiescence', 'activation', 'verification', 'finalization', 'recovery'}
     categories = {'guard', 'invalid_state', 'command_failed', 'deadline', 'cancelled', 'quiescence',
                   'recovery_failed', 'recovery_deadline'}
     recoveries = {'not_started', 'quiescence_closed', 'passed', 'failed', 'deadline_exceeded'}
@@ -74,18 +74,11 @@ def verify_release(proof: object, payload: dict[str, str], operation: str) -> di
             or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", str(proof.get("project", "")))
             or not re.fullmatch(re.escape(proof["commit"]) + r"-[0-9]{14}", str(proof.get("release", "")))):
         raise RequestError("Release evidence has an invalid release identity")
-    airflow = proof.get("airflow")
-    if (not isinstance(airflow, dict) or airflow.get("requested") not in ("on", "off")
-            or airflow.get("phase") != airflow["requested"]):
-        raise RequestError("Airflow lifecycle was not restored")
     images = proof.get("images")
     kinds = IMAGE_KINDS
     if not isinstance(images, dict) or set(images) != set(kinds):
-        raise RequestError("Release evidence must identify all five images")
+        raise RequestError("Release evidence must identify all three images")
     for kind in kinds:
-        if operation == "rollback" and kind in ("AIRFLOW", "ETL_WORKER") and airflow["requested"] == "off":
-            if images["AIRFLOW"] is None and images["ETL_WORKER"] is None:
-                continue
         prefix = re.escape(payload["CI_REGISTRY_IMAGE"] + "/" + kind.lower().replace("_", "-") + "@sha256:")
         if not isinstance(images[kind], str) or not re.fullmatch(prefix + r"[a-f0-9]{64}", images[kind]):
             raise RequestError("Release evidence contains an invalid image identity")
@@ -112,7 +105,6 @@ def verify_release(proof: object, payload: dict[str, str], operation: str) -> di
             raise RequestError("Release readiness evidence is incomplete")
     return {**{key: proof[key] for key in ("operation", "status", "release", "project", "commit",
                                          "images", "config_sha256")},
-            "airflow": {key: airflow[key] for key in ("requested", "phase")},
             "readiness": {group: {name: readiness[group][name] for name in names}
                           for group, names in checks.items()}}
 
@@ -134,15 +126,12 @@ def main() -> int:
             "YUNESA_API_IMAGE",
             "YUNESA_WEB_IMAGE",
             "YUNESA_MINIO_IMAGE",
-            "YUNESA_AIRFLOW_IMAGE",
-            "YUNESA_ETL_WORKER_IMAGE",
             "GLOBAL_PASSWORD",
             "JWT_SECRET_KEY",
             "GEMINI_API_KEY",
             "SILICONFLOW_API_KEY",
             "ADMIN_PASSWORD",
         )
-        required += AIRFLOW_SECRETS
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         if not args.validate_only:
@@ -197,10 +186,10 @@ def main() -> int:
         proof = verify_release(json.loads(result.stdout), payload, args.operation)
         # Persist only the documented receipt fields, never raw wrapper stdout or stderr.
         receipt = {key: proof[key] for key in ("operation", "status", "release", "project", "commit",
-                                              "images", "config_sha256", "airflow")}
+                                              "images", "config_sha256")}
         save_artifact("production-release.json", {**report, **receipt, "stage": "verified"})
         save_artifact("production-health.json", {"status": "passed", "commit": proof["commit"],
-                                                "readiness": proof["readiness"], "airflow": proof["airflow"]})
+                                                "readiness": proof["readiness"]})
         print(json.dumps({"status": "passed", "operation": args.operation, "commit": proof["commit"]}))
         return 0
     except (RequestError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
