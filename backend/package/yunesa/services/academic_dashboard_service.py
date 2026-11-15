@@ -7,8 +7,6 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
-
 from yunesa.config.static.models import DEFAULT_EMBED_MODELS
 from yunesa.graphrag.storage import normalize_milvus_uri
 from yunesa.utils import logger
@@ -27,16 +25,6 @@ DEFAULT_MILVUS_DB_NAME = "default"
 
 def _source_status(status: str, detail: str) -> dict[str, str]:
     return {"status": status, "detail": detail}
-
-
-def _content_range_count(response: httpx.Response) -> int:
-    content_range = response.headers.get("content-range", "")
-    if "/" in content_range:
-        count = content_range.rsplit("/", 1)[-1]
-        if count.isdigit():
-            return int(count)
-    payload = response.json()
-    return len(payload) if isinstance(payload, list) else 0
 
 
 class AcademicDashboardService:
@@ -87,7 +75,7 @@ class AcademicDashboardService:
         )
         embedding = self._embedding_metadata()
         storage_consistency = self._storage_consistency(
-            supabase=postgres_data,
+            postgres=postgres_data,
             neo4j=neo4j,
             milvus=milvus,
         )
@@ -112,7 +100,7 @@ class AcademicDashboardService:
             "embedding_dimension": embedding["dimension"],
             "storage_consistency": storage_consistency,
             "source_status": {
-                "supabase": postgres_data["source_status"],
+                "postgres": postgres_data["source_status"],
                 "neo4j": neo4j["source_status"],
                 "milvus": milvus["source_status"],
             },
@@ -158,12 +146,15 @@ class AcademicDashboardService:
                 await conn.close()
         except Exception as exc:
             logger.warning(f"academic_dashboard.postgres_failed | error_type={type(exc).__name__} | detail={exc}")
-            return await self._collect_supabase()
+            result["source_status"] = _source_status(
+                "error", "Self-hosted PostgreSQL corpus could not be read."
+            )
+            return result
 
     @staticmethod
     def _storage_consistency(
         *,
-        supabase: dict[str, Any],
+        postgres: dict[str, Any],
         neo4j: dict[str, Any],
         milvus: dict[str, Any],
     ) -> dict[str, Any]:
@@ -173,15 +164,15 @@ class AcademicDashboardService:
 
         checks = {
             "publications": {
-                "source": int(supabase.get("papers_count") or 0),
+                "source": int(postgres.get("papers_count") or 0),
                 "indexed": int(entity_distribution.get("Publication") or 0),
             },
             "lecturers": {
-                "source": int(supabase.get("lecturers_count") or 0),
+                "source": int(postgres.get("lecturers_count") or 0),
                 "indexed": int(entity_distribution.get("Lecturer") or 0),
             },
             "authorship_links": {
-                "source": int(supabase.get("authorship_links_count") or 0),
+                "source": int(postgres.get("authorship_links_count") or 0),
                 "indexed": int(
                     relationship_distribution.get("HAS_AUTHOR")
                     or relationship_distribution.get("PUBLISHES")
@@ -189,7 +180,7 @@ class AcademicDashboardService:
                 ),
             },
             "content_keywords": {
-                "source": int(supabase.get("papers_count") or 0),
+                "source": int(postgres.get("papers_count") or 0),
                 "indexed": int(collections.get("ContentKeyword") or 0),
             },
         }
@@ -199,7 +190,7 @@ class AcademicDashboardService:
 
         configured = all(
             source.get("source_status", {}).get("status") == "ready"
-            for source in (supabase, neo4j, milvus)
+            for source in (postgres, neo4j, milvus)
         )
         return {
             "status": (
@@ -211,93 +202,6 @@ class AcademicDashboardService:
             ),
             "checks": checks,
         }
-
-    async def _collect_supabase(self) -> dict[str, Any]:
-        result = {
-            "papers_count": 0,
-            "lecturers_count": 0,
-            "authorship_links_count": 0,
-            "papers_with_abstract": 0,
-            "papers_with_keywords": 0,
-            "papers_with_tldr": 0,
-            "source_status": _source_status("unconfigured", "Supabase credentials are not configured."),
-        }
-        base_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-        api_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY", "")
-        if not base_url or not api_key:
-            return result
-
-        headers = {
-            "apikey": api_key,
-            "Authorization": f"Bearer {api_key}",
-            "Prefer": "count=exact",
-            "Range": "0-0",
-        }
-        try:
-            async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
-                counts = await asyncio.gather(
-                    self._postgrest_count(client, base_url, "papers", "paper_id"),
-                    self._postgrest_count(client, base_url, "lecturers", "nip"),
-                    self._postgrest_count(client, base_url, "paper_lecturers", "paper_id"),
-                    self._postgrest_count(
-                        client,
-                        base_url,
-                        "papers",
-                        "paper_id",
-                        filters=[("abstract", "not.is.null"), ("abstract", "neq.")],
-                    ),
-                    self._postgrest_count(
-                        client,
-                        base_url,
-                        "papers",
-                        "paper_id",
-                        filters=[("keywords", "not.is.null"), ("keywords", "neq.")],
-                    ),
-                    self._postgrest_count(
-                        client,
-                        base_url,
-                        "papers",
-                        "paper_id",
-                        filters=[("tldr", "not.is.null"), ("tldr", "neq.")],
-                    ),
-                )
-        except Exception as exc:
-            logger.warning(
-                f"academic_dashboard.supabase_failed | error_type={type(exc).__name__}"
-            )
-            result["source_status"] = _source_status(
-                "error", "Academic corpus statistics could not be read."
-            )
-            return result
-
-        (
-            result["papers_count"],
-            result["lecturers_count"],
-            result["authorship_links_count"],
-            result["papers_with_abstract"],
-            result["papers_with_keywords"],
-            result["papers_with_tldr"],
-        ) = counts
-        result["source_status"] = _source_status("ready", "Academic corpus is available.")
-        return result
-
-    @staticmethod
-    async def _postgrest_count(
-        client: httpx.AsyncClient,
-        base_url: str,
-        table: str,
-        select_column: str,
-        *,
-        filters: list[tuple[str, str]] | None = None,
-    ) -> int:
-        params: list[tuple[str, str]] = [
-            ("select", select_column),
-            ("limit", "1"),
-            *(filters or []),
-        ]
-        response = await client.get(f"{base_url}/rest/v1/{table}", params=params)
-        response.raise_for_status()
-        return _content_range_count(response)
 
     async def _collect_neo4j(self) -> dict[str, Any]:
         result: dict[str, Any] = {

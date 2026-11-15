@@ -144,9 +144,6 @@ def main() -> int:
     if args.operation == "deploy":
         root = Path(__file__).resolve().parents[1]
         payload["YUNESA_CONFIG_SHA256"] = configuration_digest(root)
-    for name in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"):
-        if os.environ.get(name):
-            payload[name] = os.environ[name]
     if args.validate_only:
         print(json.dumps({"operation": args.operation, "variables_present": sorted(payload)}, sort_keys=True))
         return 0

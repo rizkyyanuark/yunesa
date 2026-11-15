@@ -1,55 +1,34 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import types
 from unittest.mock import AsyncMock
 
-import httpx
-
-from yunesa.services.academic_dashboard_service import (
-    AcademicDashboardService,
-    _content_range_count,
-)
+from yunesa.services.academic_dashboard_service import AcademicDashboardService
 
 
-def test_content_range_count_prefers_postgrest_exact_count():
-    response = httpx.Response(
-        206,
-        headers={"content-range": "0-0/57"},
-        json=[{"paper_id": "paper-1"}],
-    )
+def test_postgres_stats_report_error_when_connection_fails(monkeypatch):
+    fake_asyncpg = types.ModuleType("asyncpg")
 
-    assert _content_range_count(response) == 57
+    async def failing_connect(**kwargs):
+        raise ConnectionRefusedError("postgres unreachable")
 
+    fake_asyncpg.connect = failing_connect
+    monkeypatch.setitem(sys.modules, "asyncpg", fake_asyncpg)
 
-def test_supabase_stats_use_current_academic_tables(monkeypatch):
-    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
     service = AcademicDashboardService()
-    count_method = AsyncMock(side_effect=[50, 116, 125, 48, 45, 50])
-    monkeypatch.setattr(service, "_postgrest_count", count_method)
+    result = asyncio.run(service._collect_postgres())
 
-    result = asyncio.run(service._collect_supabase())
-
-    assert result["papers_count"] == 50
-    assert result["lecturers_count"] == 116
-    assert result["authorship_links_count"] == 125
-    assert result["source_status"]["status"] == "ready"
-    tables = [call.args[2] for call in count_method.await_args_list]
-    assert tables == [
-        "papers",
-        "lecturers",
-        "paper_lecturers",
-        "papers",
-        "papers",
-        "papers",
-    ]
+    assert result["papers_count"] == 0
+    assert result["source_status"]["status"] == "error"
 
 
 def test_collect_keeps_storage_layers_separate(monkeypatch):
     service = AcademicDashboardService(graph_name="yunesa_academic_kg")
     monkeypatch.setattr(
         service,
-        "_collect_supabase",
+        "_collect_postgres",
         AsyncMock(
             return_value={
                 "papers_count": 50,
@@ -99,12 +78,13 @@ def test_collect_keeps_storage_layers_separate(monkeypatch):
     assert result["vector_records_count"] == 1090
     assert result["graph_name"] == "yunesa_academic_kg"
     assert result["embedding_dimension"] == 1024
+    assert result["source_status"]["postgres"]["status"] == "ready"
     assert result["storage_consistency"]["status"] == "in_sync"
 
 
 def test_storage_consistency_reports_cross_store_drift():
     result = AcademicDashboardService._storage_consistency(
-        supabase={
+        postgres={
             "papers_count": 51,
             "lecturers_count": 128,
             "authorship_links_count": 140,

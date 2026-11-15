@@ -68,7 +68,7 @@ def graphrag_answer(
     mode: str = "hybrid",
     top_k: int = 5,
     graph_name: str = "yunesa_academic_kg",
-    model: str = "llama-3.3-70b-versatile",
+    model: str = "qwen/qwen3.8-27b",
     retrieval_param: Any = None,
     generation_param: Any = None,
     **kwargs: Any,

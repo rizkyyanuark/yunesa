@@ -87,7 +87,7 @@ class Config(BaseModel):
         description="default Re-Ranker model",
     )
     content_guard_llm_model: str = Field(
-        default="groq/llama-3.1-8b-instant",
+        default="groq/qwen/qwen3.8-27b",
         description="Content guard LLM model",
     )
 

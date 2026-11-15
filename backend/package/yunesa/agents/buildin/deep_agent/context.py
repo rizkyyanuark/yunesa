@@ -19,7 +19,7 @@ class DeepContext(BaseContext):
     )
 
     subagents_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="groq/llama-3.1-8b-instant",
+        default="groq/qwen/qwen3.8-27b",
         metadata={
             "name": "Sub-agent Model",
             "description": "Default model for sub-agents; individual sub-agent configuration can override it.",

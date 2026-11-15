@@ -25,7 +25,6 @@ PROJECT = "yunesa-app"
 ARCHITECTURE = 'arm64'
 SERVICES = ("postgres", "redis", "graph", "vector", "minio", "api", "worker", "web")
 SECRET_NAMES = ("GLOBAL_PASSWORD", "JWT_SECRET_KEY", "GEMINI_API_KEY", "SILICONFLOW_API_KEY")
-OPTIONAL_NAMES = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
 OPERATION_SECONDS = 1800
 RECOVERY_SECONDS = 1200
 EXECUTION: ReleaseExecution | None = None
@@ -54,8 +53,8 @@ class ReleaseExecution:
         self.reference = 'release-' + secrets.token_hex(16)
         self.journal_available = True
         values = payload if isinstance(payload, dict) else {}
-        self.sensitive = [values[name] for name in (*SECRET_NAMES, *OPTIONAL_NAMES, 'ADMIN_PASSWORD',
-                                                   'CI_REGISTRY_PASSWORD') if isinstance(values.get(name), str) and values[name]]
+        self.sensitive = [values[name] for name in (*SECRET_NAMES, 'ADMIN_PASSWORD', 'CI_REGISTRY_PASSWORD')
+                          if isinstance(values.get(name), str) and values[name]]
         directory = root / 'diagnostics'
         directory.mkdir(mode=0o700, exist_ok=True)
         info = directory.stat()
@@ -218,7 +217,6 @@ def validate_request(payload: dict, operation: str, registry: dict) -> None:
         raise DeployError('Invalid root-installed deployment settings') from error
     allowed = set(
         SECRET_NAMES
-        + OPTIONAL_NAMES
         + (
             "ADMIN_PASSWORD",
             "CI_COMMIT_SHA",
@@ -300,7 +298,6 @@ def create_release(payload: dict) -> Path:
             raise DeployError("Release source must come from root-installed trusted configuration")
         shutil.copy2(source, release / name)
     env = {name: payload[name] for name in SECRET_NAMES}
-    env.update({name: payload.get(name, "") for name in OPTIONAL_NAMES})
     env.update(
         {
             "YUNESA_API_IMAGE": payload["YUNESA_API_IMAGE"],

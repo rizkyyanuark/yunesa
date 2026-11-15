@@ -178,7 +178,7 @@ function Read-MaskedValue {
             }
             if ($valid) { $accepted = $true; return $secret }
             if ($AdminPassword) { Write-Host 'ADMIN_PASSWORD harus 12-128 karakter, memuat huruf besar, huruf kecil, angka, dan simbol; tanpa spasi untuk masking GitLab.' }
-            else { Write-Host "$Key harus 8-10000 karakter, satu baris tanpa spasi, dan berbeda dari nama variabel. URL Supabase harus HTTPS." }
+            else { Write-Host "$Key harus 8-10000 karakter, satu baris tanpa spasi, dan berbeda dari nama variabel." }
         }
         finally {
             if ($buffer -ne [IntPtr]::Zero) { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($buffer) }
@@ -227,7 +227,7 @@ try {
     }
 
     Write-Host 'Masukkan credential hanya di terminal lokal ini. Belum ada perubahan hingga Anda mengetik SIMPAN.'
-    $keys = @('GEMINI_API_KEY', 'SILICONFLOW_API_KEY', 'GLOBAL_PASSWORD', 'JWT_SECRET_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ADMIN_PASSWORD')
+    $keys = @('GEMINI_API_KEY', 'SILICONFLOW_API_KEY', 'GLOBAL_PASSWORD', 'JWT_SECRET_KEY', 'ADMIN_PASSWORD')
     $variableNames = @($metadata | ForEach-Object { $_.key }) + $keys
     if ($AdminPasswordOnly) {
         $planned.Add([pscustomobject]@{ Key = 'ADMIN_PASSWORD'; Value = (Read-MaskedValue -Key 'ADMIN_PASSWORD' -VariableNames $variableNames -AdminPassword); Generated = $false })
@@ -240,13 +240,6 @@ try {
         if ($null -eq (Find-ProductionVariable -Metadata $metadata -Key $key)) {
             $planned.Add([pscustomobject]@{ Key = $key; Value = (New-GeneratedSecret); Generated = $true })
         }
-    }
-    $useSupabase = Read-Host 'Konfigurasi Supabase? ketik y untuk isi, n untuk lewati, atau q untuk batal'
-    while ($useSupabase -notin @('y', 'n', 'q')) { $useSupabase = Read-Host 'Ketik y, n, atau q' }
-    if ($useSupabase -eq 'q') { throw [System.OperationCanceledException]::new('Input cancelled.') }
-    if ($useSupabase -eq 'y') {
-        $planned.Add([pscustomobject]@{ Key = 'SUPABASE_URL'; Value = (Read-MaskedValue -Key 'SUPABASE_URL' -VariableNames $variableNames -HttpsUrl); Generated = $false })
-        $planned.Add([pscustomobject]@{ Key = 'SUPABASE_SERVICE_ROLE_KEY'; Value = (Read-MaskedValue -Key 'SUPABASE_SERVICE_ROLE_KEY' -VariableNames $variableNames); Generated = $false })
     }
     }
     Write-Host "Tujuan: $($Repository.AbsoluteUri.TrimEnd('/')); scope: $scope; variabel: $($planned.Key -join ', ')."

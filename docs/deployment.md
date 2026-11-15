@@ -64,7 +64,6 @@ Secret CI memakai variable individual protected, dengan raw value dan environmen
 | `GEMINI_API_KEY` | Provider Gemini | Protected/masked/hidden/raw, scope `production`; pemanggilan chat nyata available. |
 | `SILICONFLOW_API_KEY` | Provider SiliconFlow | Protected/masked/hidden/raw, scope `production`; pemanggilan embedding nyata available. |
 | `ADMIN_PASSWORD` | Password akun awal `rizkyyanuark`, berbeda dari password storage | Protected/masked/hidden/raw, scope `production`; metadata tersedia. |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Provider Supabase bila digunakan | Opsional; protected/raw, scope `production`; key masked. |
 | Credential registry pada server | Pull image dari registry project | Token job CI dipakai lewat stdin dan Docker config sementara; tidak disimpan sebagai PAT permanen. |
 | DNS/TLS dan akses proxy | Domain menuju layanan baru | Periksa route dan sertifikat sebelum smoke publik. |
 

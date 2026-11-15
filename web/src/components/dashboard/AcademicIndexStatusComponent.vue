@@ -96,7 +96,7 @@ const collectionItems = computed(() => distributionItems(stats.value.vector_coll
 
 const services = computed(() =>
   [
-    ['supabase', 'PostgreSQL'],
+    ['postgres', 'PostgreSQL'],
     ['neo4j', 'Neo4j'],
     ['milvus', 'Milvus']
   ].map(([key, shortLabel]) => {
