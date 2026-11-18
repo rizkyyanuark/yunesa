@@ -1,10 +1,6 @@
 # ETL Pipeline Configuration
 # Priority: .env (Highest) > etl.yaml > default_values
 
-supabase:
-  url: ""
-  # Keys should stay in .env for security
-
 scival:
   email: ""
   # Passwords should stay in .env

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -46,7 +44,7 @@ async def sync_alias_suggestions(
     payload: SyncSuggestionsRequest | None = None,
     current_user: User = Depends(get_admin_user),
 ):
-    source_path = Path(payload.source_path) if payload and payload.source_path else None
+    source_path = payload.source_path if payload and payload.source_path else None
     result = entity_resolution_curation_store.sync_suggestions(source_path=source_path)
     return {"success": True, "data": result}
 
@@ -94,8 +92,8 @@ async def export_approved_aliases(
     payload: ExportAliasesRequest | None = None,
     current_user: User = Depends(get_admin_user),
 ):
-    output_path = Path(payload.output_path) if payload and payload.output_path else None
-    base_aliases_path = Path(payload.base_aliases_path) if payload and payload.base_aliases_path else None
+    output_path = payload.output_path if payload and payload.output_path else None
+    base_aliases_path = payload.base_aliases_path if payload and payload.base_aliases_path else None
     result = entity_resolution_curation_store.export_aliases(
         output_path=output_path,
         base_path=base_aliases_path,

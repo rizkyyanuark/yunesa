@@ -1,5 +1,4 @@
 import os
-from importlib import import_module
 from yunesa import config as global_config
 from .factory import KnowledgeBaseFactory
 from .manager import KnowledgeBaseManager
@@ -9,7 +8,7 @@ _SKIP_APP_INIT = os.environ.get("YUNESA_SKIP_APP_INIT") == "1"
 
 if not _LITE_MODE:
     from .graphs.core_graph_service import CoreGraphService
-    from .implementations.milvus import MilvusKB, AcademicKGVectorStore
+    from .implementations.milvus import MilvusKB
 
     KnowledgeBaseFactory.register(
         "milvus", MilvusKB, {
@@ -63,45 +62,4 @@ __all__ = [
     "GraphDatabase",
     "knowledge_base",
     "graph_base",
-    "AcademicKGBuilder",
-    "AcademicKGVectorStore",
-    "KGConfig",
-    "AcademicExtractionConfig",
-    "MilvusVectorIndexConfig",
-    "run_kg_build",
-    "write_graph_to_neo4j",
-    "write_vector_index_to_milvus",
 ]
-
-_PIPELINE_EXPORTS = {
-    'AcademicKGBuilder': 'graphs.builder',
-    'AcademicKGVectorStore': 'implementations.milvus',
-    'KGConfig': 'config',
-    'AcademicExtractionConfig': 'config',
-    'MilvusVectorIndexConfig': 'config',
-    'run_kg_build': 'services.kg_service',
-    'write_graph_to_neo4j': 'graphs.storage_neo4j',
-    'write_vector_index_to_milvus': 'implementations.milvus',
-    'IeeeSemanticIndex': 'utils.ieee_semantic',
-    'AcademicConceptResolver': 'utils.concept_resolver',
-    'graph_to_frames': 'graphs.builder',
-    'serialisable_graph_copy': 'graphs.builder',
-    'graph_quality_report': 'eval.quality_gates',
-    'entity_resolution_report': 'eval.entity_resolution',
-    'write_llm_alias_suggestions': 'eval.entity_resolution',
-    'summarize_extracted_elements': 'parser.ner_extraction',
-    'extract_academic_elements_with_gliner_glirel': 'parser.ner_extraction',
-    'DEFAULT_GLINER_MODEL': 'constants',
-    'DEFAULT_GLIREL_MODEL': 'constants',
-    'LLMAliasSuggestionConfig': 'config',
-}
-__all__ += list(_PIPELINE_EXPORTS)
-
-
-def __getattr__(name: str):
-    module = _PIPELINE_EXPORTS.get(name)
-    if module is None:
-        raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
-    value = getattr(import_module(f'{__name__}.{module}'), name)
-    globals()[name] = value
-    return value

@@ -45,9 +45,8 @@ dependencies = [
     "openai>=1.109.0",
     "opik>=1.0.0",
     "pandas>=2.2.3",
-    "pddiktipy>=2.0.6",
     "pillow>=10.5.0",
-    "pyarrow>=19.0.0",
+    "pyarrow>=18.1.0,<19.0.0",
     "psycopg[binary,pool]>=3.3.3",
     "PyJWT>=2.8.0",
     "pydantic[email]>=2.10.6",
@@ -63,9 +62,7 @@ dependencies = [
     "requests>=2.32.3",
     "rdflib>=6.3.1",
     "s3fs>=2025.0.0",
-    "selenium>=4.21.0",
     "sqlalchemy[asyncio]>=2.0.0",
-    "supabase>=2.13.0",
     "tavily-python>=0.7.0",
     "tenacity>=8.0.0",
     "tomli>=2.0.1",
@@ -86,29 +83,13 @@ test = [
     "pytest-httpx>=0.32.0",
     "pytest-cov>=6.0.0",
 ]
-kg = [
-    "gliner==0.2.26",
-    "torch==2.11.0+cpu",
-    "transformers==5.1.0",
-]
 
 [tool.setuptools]
 include-package-data = true
 
-[tool.setuptools.package-data]
-"yunesa.knowledge" = ["resources/*.ttl", "resources/*.yml"]
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["yunesa*"]
-[tool.uv]
-
-[[tool.uv.index]]
-
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
 
 [tool.uv.sources]
 YUnesa = { path = ".", editable = true }
-torch = { index = "pytorch-cpu" }

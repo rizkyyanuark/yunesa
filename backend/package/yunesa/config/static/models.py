@@ -153,12 +153,13 @@ DEFAULT_CHAT_MODEL_PROVIDERS: dict[str, ChatModelProvider] = {
         name="Groq",
         url="https://console.groq.com/docs/models",
         base_url="https://api.groq.com/openai/v1",
-        default="llama-3.3-70b-versatile",
+        default="qwen/qwen3.8-27b",
         env="GROQ_API_KEY",
         models=[
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "qwen/qwen3-32b",
+            "qwen/qwen3.8-27b",
+            "qwen/qwen3.6-27b",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
         ],
     ),
     # "moonshot": ChatModelProvider(

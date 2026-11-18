@@ -16,17 +16,15 @@ from datetime import datetime, UTC
 from pathlib import Path
 
 from airflow_operations import (
-    AIRFLOW_SECRETS, IMAGE_KINDS, RUNTIME_SERVICES, AirflowOperations, OperationError, assert_no_legacy_scheduler,
-    configuration_digest, deployment_airflow_log_volume, deployment_architecture, deployment_endpoints,
-    deployment_project, lifecycle_lock, set_gate,
+    IMAGE_KINDS, OperationError, configuration_digest, deployment_architecture,
+    deployment_endpoints, deployment_project, lifecycle_lock,
 )
 
 ROOT = Path("/opt/yunesa-app")
 PROJECT = "yunesa-app"
 ARCHITECTURE = 'arm64'
 SERVICES = ("postgres", "redis", "graph", "vector", "minio", "api", "worker", "web")
-SECRET_NAMES = ("GLOBAL_PASSWORD", "JWT_SECRET_KEY", "GEMINI_API_KEY", "SILICONFLOW_API_KEY", *AIRFLOW_SECRETS)
-OPTIONAL_NAMES = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
+SECRET_NAMES = ("GLOBAL_PASSWORD", "JWT_SECRET_KEY", "GEMINI_API_KEY", "SILICONFLOW_API_KEY")
 OPERATION_SECONDS = 1800
 RECOVERY_SECONDS = 1200
 EXECUTION: ReleaseExecution | None = None
@@ -55,8 +53,8 @@ class ReleaseExecution:
         self.reference = 'release-' + secrets.token_hex(16)
         self.journal_available = True
         values = payload if isinstance(payload, dict) else {}
-        self.sensitive = [values[name] for name in (*SECRET_NAMES, *OPTIONAL_NAMES, 'ADMIN_PASSWORD',
-                                                   'CI_REGISTRY_PASSWORD') if isinstance(values.get(name), str) and values[name]]
+        self.sensitive = [values[name] for name in (*SECRET_NAMES, 'ADMIN_PASSWORD', 'CI_REGISTRY_PASSWORD')
+                          if isinstance(values.get(name), str) and values[name]]
         directory = root / 'diagnostics'
         directory.mkdir(mode=0o700, exist_ok=True)
         info = directory.stat()
@@ -175,16 +173,6 @@ def phase(stage: str) -> None:
         EXECUTION.phase(stage)
 
 
-def airflow_deadline(name: str, default: int) -> int:
-    try:
-        deadline = int(os.getenv(name, str(default)))
-    except ValueError as error:
-        raise DeployError(f'{name} must be between 1 and 3600 seconds') from error
-    if not 1 <= deadline <= 3600:
-        raise DeployError(f'{name} must be between 1 and 3600 seconds')
-    return deadline
-
-
 def run(arguments: list[str], *, label: str, data: bytes | None = None, timeout: int = 300, output_file=None) -> bytes:
     if EXECUTION is not None:
         EXECUTION.step = label
@@ -225,12 +213,10 @@ def validate_request(payload: dict, operation: str, registry: dict) -> None:
         deployment_endpoints(registry)
         deployment_project(registry)
         deployment_architecture(registry)
-        deployment_airflow_log_volume(registry)
     except ValueError as error:
         raise DeployError('Invalid root-installed deployment settings') from error
     allowed = set(
         SECRET_NAMES
-        + OPTIONAL_NAMES
         + (
             "ADMIN_PASSWORD",
             "CI_COMMIT_SHA",
@@ -243,7 +229,6 @@ def validate_request(payload: dict, operation: str, registry: dict) -> None:
         )
     )
     allowed.add("YUNESA_MINIO_IMAGE")
-    allowed.update(("YUNESA_AIRFLOW_IMAGE", "YUNESA_ETL_WORKER_IMAGE"))
     allowed.add("YUNESA_CONFIG_SHA256")
     if (
         not isinstance(payload, dict)
@@ -305,12 +290,6 @@ def image_platform(image: str) -> None:
 
 def create_release(payload: dict) -> Path:
     registry = checked_config(ROOT / 'config/registry.json')
-    current = pointed_release('current')
-    current_environment = AirflowOperations(ROOT, current).environment() if current else {}
-    try:
-        log_volume = deployment_airflow_log_volume(registry, current_environment)
-    except ValueError as error:
-        raise DeployError(str(error)) from error
     release = ROOT / "releases" / (payload["CI_COMMIT_SHA"] + "-" + datetime.now(UTC).strftime("%Y%m%d%H%M%S"))
     release.mkdir(mode=0o700, parents=True)
     for name in ("docker-compose.prod.yml", "deployment-readiness.py"):
@@ -319,21 +298,15 @@ def create_release(payload: dict) -> Path:
             raise DeployError("Release source must come from root-installed trusted configuration")
         shutil.copy2(source, release / name)
     env = {name: payload[name] for name in SECRET_NAMES}
-    env.update({name: payload.get(name, "") for name in OPTIONAL_NAMES})
     env.update(
         {
             "YUNESA_API_IMAGE": payload["YUNESA_API_IMAGE"],
             "YUNESA_WEB_IMAGE": payload["YUNESA_WEB_IMAGE"],
             "YUNESA_MINIO_IMAGE": payload["YUNESA_MINIO_IMAGE"],
-            "YUNESA_AIRFLOW_IMAGE": payload["YUNESA_AIRFLOW_IMAGE"],
-            "YUNESA_ETL_WORKER_IMAGE": payload["YUNESA_ETL_WORKER_IMAGE"],
             "YUNESA_RELEASE_ID": release.name,
             "YUNESA_COMPOSE_PROJECT": PROJECT,
-            "DOCKER_NETWORK": f'{PROJECT}_app-network',
-            "YUNESA_AIRFLOW_LOG_VOLUME": log_volume,
-            "YUNESA_DOCKER_GID": str(Path('/var/run/docker.sock').stat().st_gid),
             "YUNESA_STATE_ROOT": str(ROOT / "shared"),
-            "MINIO_PUBLIC_BASE_URL": deployment_endpoints(checked_config(ROOT / 'config/registry.json'))['public_base_url'],
+            "MINIO_PUBLIC_BASE_URL": deployment_endpoints(registry)['public_base_url'],
         }
     )
     for name, value in env.items():
@@ -348,10 +321,6 @@ def create_release(payload: dict) -> Path:
                 "api_image": payload["YUNESA_API_IMAGE"],
                 "web_image": payload["YUNESA_WEB_IMAGE"],
                 "minio_image": payload["YUNESA_MINIO_IMAGE"],
-                "airflow_image": payload["YUNESA_AIRFLOW_IMAGE"],
-                "etl_worker_image": payload["YUNESA_ETL_WORKER_IMAGE"],
-                "airflow_version": "3.1.7",
-                "airflow_log_volume": log_volume,
                 "config_sha256": payload["YUNESA_CONFIG_SHA256"],
                 "project": PROJECT,
                 "created_at": datetime.now(UTC).isoformat(),
@@ -390,14 +359,7 @@ def backup(release: Path) -> Path:
 
 
 def _backup(release: Path) -> Path:
-    try:
-        assert_no_legacy_scheduler()
-        airflow = AirflowOperations(ROOT, release)
-        drain_deadline = airflow_deadline('YUNESA_AIRFLOW_DRAIN_DEADLINE', 600)
-        airflow.off(deadline=drain_deadline, preserve_requested=True)
-        run(["docker", "pull", "alpine:3.22"], label="Prepare backup helper image")
-    except (OperationError, DeployError) as error:
-        raise QuiescenceError(str(error), category=getattr(error, 'category', 'quiescence')) from error
+    run(["docker", "pull", "alpine:3.22"], label="Prepare backup helper image")
     compose(release, "stop", "web", label="Stop accepting public application requests")
     active = compose(
         release,
@@ -433,7 +395,6 @@ def _backup(release: Path) -> Path:
             label="Backup PostgreSQL",
             output_file=stream,
         )
-    airflow.backup_metadata(directory)
     compose(release, "stop", "graph", "vector", "redis", "minio", label="Stop storage for consistent snapshots")
     for service in ("memgraph", "qdrant", "redis", "minio"):
         volume = f"{PROJECT}_{service}-data"
@@ -467,7 +428,7 @@ def _backup(release: Path) -> Path:
             label=f"Backup {service}",
         )
     with tarfile.open(directory / "shared.tar.gz", "w:gz") as archive:
-        for name in ("data", "saves", "models", "airflow"):
+        for name in ("data", "saves", "models"):
             if not (ROOT / 'shared' / name).exists():
                 continue
             archive.add(ROOT / "shared" / name, arcname=name)
@@ -572,34 +533,18 @@ def readiness(release: Path, *, providers: bool) -> dict:
     return result
 
 
-def trusted_airflow_version(release: Path) -> str | None:
-    return checked_config(release / 'manifest.json').get('airflow_version')
-
-
-def restore_airflow(release: Path) -> None:
-    airflow = AirflowOperations(ROOT, release)
-    state = airflow.state()
-    if state['requested'] == 'on':
-        try:
-            deployment_airflow_log_volume(checked_config(ROOT / 'config/registry.json'), airflow.environment())
-            airflow.on(deadline=airflow_deadline('YUNESA_AIRFLOW_READINESS_DEADLINE', 180))
-        except (OperationError, ValueError) as error:
-            raise DeployError(str(error)) from error
-    else:
-        cleaned = {k: v for k, v in state.items() if k != 'error'}
-        airflow.save({**cleaned, 'requested': 'off', 'phase': 'off'})
-        set_gate(airflow.control, False, release.name)
-
-
 def release_evidence(release: Path, operation: str, evidence: dict) -> dict:
     manifest = checked_config(release / 'manifest.json')
-    state = AirflowOperations(ROOT, release).state()
-    if state['requested'] not in ('on', 'off') or state['phase'] != state['requested']:
-        raise DeployError('Release evidence requires restored Airflow lifecycle state')
-    return {"operation": operation, "status": "passed", "release": release.name, "project": PROJECT,
-            "commit": manifest["commit"], "config_sha256": manifest["config_sha256"],
-            "images": {kind: manifest.get(kind.lower() + "_image") for kind in IMAGE_KINDS},
-            "airflow": {"requested": state["requested"], "phase": state["phase"]}, "readiness": evidence}
+    return {
+        "operation": operation,
+        "status": "passed",
+        "release": release.name,
+        "project": PROJECT,
+        "commit": manifest["commit"],
+        "config_sha256": manifest["config_sha256"],
+        "images": {kind: manifest.get(kind.lower() + "_image") for kind in IMAGE_KINDS},
+        "readiness": evidence,
+    }
 
 
 def deploy(payload: dict, operation: str) -> dict:
@@ -609,8 +554,6 @@ def deploy(payload: dict, operation: str) -> dict:
     if operation == "rollback":
         if current is None or previous is None:
             raise DeployError("Rollback requires current and previous successful releases")
-        if AirflowOperations(ROOT, current).state()['requested'] == 'on' and trusted_airflow_version(previous) != '3.1.7':
-            raise DeployError('Cannot roll back enabled Airflow to an incompatible release')
         try:
             phase('quiescence')
             backup(current)
@@ -628,8 +571,6 @@ def deploy(payload: dict, operation: str) -> dict:
             )
             phase('verification')
             evidence = readiness(previous, providers=False)
-            phase('airflow')
-            restore_airflow(previous)
             proof = release_evidence(previous, "rollback", evidence)
             phase('finalization')
         except QuiescenceError:
@@ -637,10 +578,6 @@ def deploy(payload: dict, operation: str) -> dict:
         except (DeployError, OperationError, OSError, ValueError, KeyError) as error:
             if EXECUTION is not None:
                 EXECUTION.recover(error)
-            try:
-                AirflowOperations(ROOT, previous).compose('stop', '--timeout', '30', *RUNTIME_SERVICES)
-            except OperationError:
-                pass
             compose(
                 current,
                 "up",
@@ -653,7 +590,6 @@ def deploy(payload: dict, operation: str) -> dict:
                 label="Restore current release after rollback failure",
             )
             readiness(current, providers=False)
-            restore_airflow(current)
             if EXECUTION is not None:
                 EXECUTION.recovery_status = 'passed'
             raise
@@ -664,17 +600,11 @@ def deploy(payload: dict, operation: str) -> dict:
         old_env = (current / ".env").read_text(encoding="utf-8")
         if f"GLOBAL_PASSWORD='{payload['GLOBAL_PASSWORD']}'\n" not in old_env:
             raise DeployError("Changing GLOBAL_PASSWORD with existing volumes requires a separate rotation plan")
-        for name in ('AIRFLOW_DB_PASSWORD', 'AIRFLOW_FERNET_KEY', 'AIRFLOW_API_SECRET', 'AIRFLOW_JWT_SECRET'):
-            if f"{name}='" in old_env and f"{name}='{payload[name]}'\n" not in old_env:
-                raise DeployError(f'Changing {name} requires a separate credential migration')
     release = create_release(payload)
     compose(release, "pull", *SERVICES, label="Pull release images", timeout=1200)
     image_platform(payload["YUNESA_API_IMAGE"])
     image_platform(payload["YUNESA_WEB_IMAGE"])
     image_platform(payload["YUNESA_MINIO_IMAGE"])
-    for kind in ('AIRFLOW', 'ETL_WORKER'):
-        run(['docker', 'pull', payload[f'YUNESA_{kind}_IMAGE']], label='Pull ETL release image', timeout=1200)
-        image_platform(payload[f'YUNESA_{kind}_IMAGE'])
     try:
         if current:
             phase('quiescence')
@@ -689,8 +619,6 @@ def deploy(payload: dict, operation: str) -> dict:
         compose(release, "up", "-d", "--no-build", "--wait", "--wait-timeout", "300", *SERVICES, label="Start release")
         phase('verification')
         evidence = readiness(release, providers=True)
-        phase('airflow')
-        restore_airflow(release)
         proof = release_evidence(release, "deploy", evidence)
         phase('finalization')
     except QuiescenceError:
@@ -698,10 +626,6 @@ def deploy(payload: dict, operation: str) -> dict:
     except (DeployError, OperationError, OSError, ValueError, KeyError) as error:
         if EXECUTION is not None:
             EXECUTION.recover(error)
-        try:
-            AirflowOperations(ROOT, release).compose('stop', '--timeout', '30', *RUNTIME_SERVICES)
-        except OperationError:
-            pass
         if current:
             compose(
                 current,
@@ -715,7 +639,6 @@ def deploy(payload: dict, operation: str) -> dict:
                 label="Restore current release",
             )
             readiness(current, providers=False)
-            restore_airflow(current)
             print(json.dumps({"operation": "automatic_rollback", "release": current.name, "status": "passed"}))
         else:
             compose(release, "stop", "web", "api", "worker", label="Stop failed initial application release")

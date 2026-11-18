@@ -63,7 +63,7 @@ const props = defineProps({
 })
 
 const stats = computed(() => props.academicStats || {})
-const sourceStatus = computed(() => stats.value.source_status?.supabase?.status || 'unconfigured')
+const sourceStatus = computed(() => stats.value.source_status?.postgres?.status || 'unconfigured')
 const statusLabel = computed(
   () =>
     ({

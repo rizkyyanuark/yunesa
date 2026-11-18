@@ -23,14 +23,6 @@ lint.ignore = [
     "E501",
 ]
 
-[tool.uv]
-
-[[tool.uv.index]]
-
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
 [tool.uv.sources]
 YUnesa = { path = "package", editable = true }
 

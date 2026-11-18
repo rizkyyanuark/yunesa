@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import fsspec
 import yaml
 
 
@@ -14,33 +15,132 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _is_s3_uri(value: str | Path | None) -> bool:
+    return isinstance(value, str) and value.startswith("s3://")
+
+
+def _normalize_target(value: str | Path) -> str | Path:
+    if _is_s3_uri(value):
+        return str(value)
+    return Path(value)
+
+
+def _s3_storage_options() -> dict[str, Any]:
+    endpoint = (
+        os.getenv("AWS_ENDPOINT_URL")
+        or os.getenv("MINIO_ENDPOINT")
+        or os.getenv("MINIO_URI")
+        or "http://minio:9000"
+    ).strip()
+    if endpoint and not endpoint.startswith(("http://", "https://")):
+        endpoint = f"http://{endpoint}"
+    key = (
+        os.getenv("AWS_ACCESS_KEY_ID")
+        or os.getenv("MINIO_ROOT_USER")
+        or os.getenv("MINIO_ACCESS_KEY")
+        or "yunesa"
+    ).strip()
+    secret = (
+        os.getenv("AWS_SECRET_ACCESS_KEY")
+        or os.getenv("MINIO_ROOT_PASSWORD")
+        or os.getenv("MINIO_SECRET_KEY")
+        or os.getenv("GLOBAL_PASSWORD")
+        or ""
+    ).strip()
+    options: dict[str, Any] = {"client_kwargs": {"endpoint_url": endpoint}}
+    if key:
+        options["key"] = key
+    if secret:
+        options["secret"] = secret
+    return options
+
+
+def _get_s3_fs() -> Any:
+    return fsspec.filesystem("s3", **_s3_storage_options())
+
+
+def _s3_path(uri: str) -> str:
+    return uri[len("s3://"):]
+
+
+def _ensure_s3_bucket(fs: Any, uri: str) -> None:
+    parts = _s3_path(uri).split("/", 1)
+    bucket = parts[0] if parts else ""
+    if bucket and not fs.exists(bucket):
+        fs.makedirs(bucket, exist_ok=True)
+
+
+def _target_exists(target: str | Path) -> bool:
+    if _is_s3_uri(target):
+        fs = _get_s3_fs()
+        return bool(fs.exists(_s3_path(str(target))))
+    return Path(target).exists()
+
+
+def _read_text(target: str | Path) -> str:
+    if _is_s3_uri(target):
+        fs = _get_s3_fs()
+        with fs.open(_s3_path(str(target)), "r", encoding="utf-8") as handle:
+            return handle.read()
+    return Path(target).read_text(encoding="utf-8")
+
+
+def _write_text(target: str | Path, content: str) -> None:
+    if _is_s3_uri(target):
+        fs = _get_s3_fs()
+        uri = str(target)
+        _ensure_s3_bucket(fs, uri)
+        with fs.open(_s3_path(uri), "w", encoding="utf-8") as handle:
+            handle.write(content)
+        return
+    path = Path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
 def _workspace_root() -> Path:
-    # Inside Docker, /app/data is the shared volume — use /app as root.
     docker_data = Path("/app/data")
     if docker_data.is_dir():
         return Path("/app")
     current = Path(__file__).resolve()
     for parent in current.parents:
-        if (parent / "notebooks" / "build-graph").exists() and (parent / "backend").exists():
+        if (parent / "backend").exists():
             return parent
     return current.parents[4]
 
 
-def _default_paths() -> dict[str, Path]:
+def _s3_er_base_uri() -> str:
+    bucket = (os.getenv("AWS_S3_BUCKET") or "yunesa-etl").strip().strip("/")
+    prefix = (os.getenv("AWS_S3_PATH") or "etl/data").strip().strip("/")
+    if prefix:
+        return f"s3://{bucket}/{prefix}/kg/entity_resolution"
+    return f"s3://{bucket}/kg/entity_resolution"
+
+
+def _default_paths() -> dict[str, str | Path]:
+    if os.getenv("ETL_STORAGE_TYPE", "local").strip().lower() == "s3":
+        base = _s3_er_base_uri()
+        return {
+            "store": _normalize_target(os.getenv("YUNESA_ALIAS_CURATION_STORE") or f"{base}/alias_curation_store.json"),
+            "suggestions": _normalize_target(os.getenv("YUNESA_ALIAS_SUGGESTIONS_PATH") or f"{base}/concept_alias_suggestions.json"),
+            "base_aliases": _normalize_target(os.getenv("YUNESA_BASE_CONCEPT_ALIASES_PATH") or f"{base}/concept_aliases.yml"),
+            "approved_aliases": _normalize_target(os.getenv("YUNESA_APPROVED_CONCEPT_ALIASES_PATH") or f"{base}/concept_aliases.approved.yml"),
+        }
+
     root = _workspace_root()
     er_dir = root / "data" / "kg" / "entity_resolution"
     suggestion_candidates = [
-        Path(os.getenv("YUNESA_ALIAS_SUGGESTIONS_PATH", "")) if os.getenv("YUNESA_ALIAS_SUGGESTIONS_PATH") else None,
+        _normalize_target(os.getenv("YUNESA_ALIAS_SUGGESTIONS_PATH", "")) if os.getenv("YUNESA_ALIAS_SUGGESTIONS_PATH") else None,
         er_dir / "concept_alias_suggestions.json",
         root / "data" / "kg_pipeline_test" / "kg" / "output" / "concept_alias_suggestions.json",
         root / "notebooks" / "build-graph" / "outputs" / "entity_resolution" / "concept_alias_suggestions.json",
     ]
-    suggestion_path = next((path for path in suggestion_candidates if path and path.exists()), suggestion_candidates[-1])
+    suggestion_path = next((path for path in suggestion_candidates if path and _target_exists(path)), suggestion_candidates[1])
     return {
-        "store": Path(os.getenv("YUNESA_ALIAS_CURATION_STORE", er_dir / "alias_curation_store.json")),
-        "suggestions": Path(suggestion_path),
-        "base_aliases": Path(os.getenv("YUNESA_BASE_CONCEPT_ALIASES_PATH", root / "notebooks" / "build-graph" / "config" / "concept_aliases.yml")),
-        "approved_aliases": Path(os.getenv("YUNESA_APPROVED_CONCEPT_ALIASES_PATH", er_dir / "concept_aliases.approved.yml")),
+        "store": _normalize_target(os.getenv("YUNESA_ALIAS_CURATION_STORE") or (er_dir / "alias_curation_store.json")),
+        "suggestions": _normalize_target(suggestion_path),
+        "base_aliases": _normalize_target(os.getenv("YUNESA_BASE_CONCEPT_ALIASES_PATH") or (er_dir / "concept_aliases.yml")),
+        "approved_aliases": _normalize_target(os.getenv("YUNESA_APPROVED_CONCEPT_ALIASES_PATH") or (er_dir / "concept_aliases.approved.yml")),
     }
 
 
@@ -73,16 +173,16 @@ def _unique_strings(values: list[Any]) -> list[str]:
 
 
 class EntityResolutionCurationStore:
-    """File-backed curation store for KG concept alias suggestions.
+    """File- or S3-backed curation store for KG concept alias suggestions.
 
-    This keeps alias review outside the production relational schema while still
-    producing a YAML artifact that the KG construction pipeline can consume.
+    Keeps alias review outside the relational schema while producing a YAML
+    artifact consumable by the ingestion pipeline over local storage or MinIO S3.
     """
 
-    def __init__(self, store_path: Path | None = None) -> None:
+    def __init__(self, store_path: str | Path | None = None) -> None:
         paths = _default_paths()
         self.paths = paths
-        self.store_path = Path(store_path or paths["store"])
+        self.store_path: str | Path = _normalize_target(store_path if store_path is not None else paths["store"])
 
     def _empty_store(self) -> dict[str, Any]:
         return {
@@ -92,10 +192,10 @@ class EntityResolutionCurationStore:
         }
 
     def _load_store(self) -> dict[str, Any]:
-        if not self.store_path.exists():
+        if not _target_exists(self.store_path):
             return self._empty_store()
         try:
-            data = json.loads(self.store_path.read_text(encoding="utf-8"))
+            data = json.loads(_read_text(self.store_path))
         except Exception:
             return self._empty_store()
         if not isinstance(data, dict):
@@ -109,10 +209,9 @@ class EntityResolutionCurationStore:
 
     def _save_store(self, data: dict[str, Any]) -> None:
         data["updated_at"] = _utc_now()
-        self.store_path.parent.mkdir(parents=True, exist_ok=True)
-        self.store_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_text(self.store_path, json.dumps(data, ensure_ascii=False, indent=2))
 
-    def _normalize_suggestion(self, item: dict[str, Any], source_path: Path) -> dict[str, Any]:
+    def _normalize_suggestion(self, item: dict[str, Any], source_path: str | Path) -> dict[str, Any]:
         suggestion = deepcopy(item)
         suggestion_id = str(suggestion.get("id") or _stable_id(suggestion))
         suggestion["id"] = suggestion_id
@@ -128,13 +227,13 @@ class EntityResolutionCurationStore:
         suggestion.setdefault("rationale", "")
         return suggestion
 
-    def sync_suggestions(self, source_path: Path | None = None) -> dict[str, Any]:
-        source = Path(source_path or self.paths["suggestions"])
+    def sync_suggestions(self, source_path: str | Path | None = None) -> dict[str, Any]:
+        source = _normalize_target(source_path if source_path is not None else self.paths["suggestions"])
         data = self._load_store()
         imported = 0
         updated = 0
 
-        if not source.exists():
+        if not _target_exists(source):
             self._save_store(data)
             return {
                 "imported": imported,
@@ -144,7 +243,7 @@ class EntityResolutionCurationStore:
                 "missing_source": True,
             }
 
-        payload = json.loads(source.read_text(encoding="utf-8"))
+        payload = json.loads(_read_text(source))
         suggestions = payload.get("suggestions", []) if isinstance(payload, dict) else []
         if not isinstance(suggestions, list):
             suggestions = []
@@ -184,7 +283,7 @@ class EntityResolutionCurationStore:
 
     def list_suggestions(self, status: str | None = None) -> dict[str, Any]:
         data = self._load_store()
-        if not data["suggestions"] and self.paths["suggestions"].exists():
+        if not data["suggestions"] and _target_exists(self.paths["suggestions"]):
             self.sync_suggestions()
             data = self._load_store()
 
@@ -266,10 +365,10 @@ class EntityResolutionCurationStore:
         self._save_store(data)
         return item
 
-    def _load_base_aliases(self, path: Path) -> dict[str, Any]:
-        if not path.exists():
+    def _load_base_aliases(self, path: str | Path) -> dict[str, Any]:
+        if not _target_exists(path):
             return {"aliases": {}}
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        data = yaml.safe_load(_read_text(path)) or {}
         if not isinstance(data, dict):
             return {"aliases": {}}
         aliases = data.get("aliases", data)
@@ -277,10 +376,14 @@ class EntityResolutionCurationStore:
             aliases = {}
         return {"aliases": deepcopy(aliases)}
 
-    def export_aliases(self, output_path: Path | None = None, base_path: Path | None = None) -> dict[str, Any]:
+    def export_aliases(
+        self,
+        output_path: str | Path | None = None,
+        base_path: str | Path | None = None,
+    ) -> dict[str, Any]:
         data = self._load_store()
-        base_alias_path = Path(base_path or self.paths["base_aliases"])
-        export_path = Path(output_path or self.paths["approved_aliases"])
+        base_alias_path = _normalize_target(base_path if base_path is not None else self.paths["base_aliases"])
+        export_path = _normalize_target(output_path if output_path is not None else self.paths["approved_aliases"])
         payload = self._load_base_aliases(base_alias_path)
         aliases = payload.setdefault("aliases", {})
         approved_count = 0
@@ -302,11 +405,7 @@ class EntityResolutionCurationStore:
             }
             approved_count += 1
 
-        export_path.parent.mkdir(parents=True, exist_ok=True)
-        export_path.write_text(
-            yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
+        _write_text(export_path, yaml.safe_dump(payload, allow_unicode=True, sort_keys=False))
         return {
             "approved_count": approved_count,
             "export_path": str(export_path),
